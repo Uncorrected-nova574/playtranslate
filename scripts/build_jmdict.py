@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""
+Build the JMdict SQLite database for GameLens offline dictionary.
+
+Usage (run from project root):
+    python scripts/build_jmdict.py
+
+Requirements: Python 3.8+, no third-party libraries needed.
+
+Output: app/src/main/assets/jmdict.db  (~35 MB)
+
+JMdict is © The Electronic Dictionary Research and Development Group,
+licensed under Creative Commons Attribution-ShareAlike 3.0.
+See https://www.edrdg.org/edrdg/licence.html
+"""
+
+import gzip
+import os
+import re
+import sqlite3
+import ssl
+import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+JMDICT_URL = "https://ftp.edrdg.org/pub/Nihongo/JMdict_e.gz"
+SCRIPT_DIR = Path(__file__).parent
+OUTPUT_PATH = SCRIPT_DIR.parent / "app" / "src" / "main" / "assets" / "jmdict.db"
+
+# Shorten verbose JMdict POS entity values for display
+POS_ABBREV = {
+    "noun (common) (futsuumeishi)": "Noun",
+    "adverbial noun (fukushitekimeishi)": "Adv. noun",
+    "noun, used as a suffix": "Noun suffix",
+    "noun, used as a prefix": "Noun prefix",
+    "noun (temporal) (jisoumeishi)": "Temporal noun",
+    "pronoun": "Pronoun",
+    "adjective (keiyoushi)": "I-adjective",
+    "adjective (keiyoushi) - yoi/ii class": "I-adjective (ii)",
+    "adjectival nouns or quasi-adjectives (keiyodoshi)": "Na-adjective",
+    "pre-noun adjectival (rentaishi)": "Pre-noun adj.",
+    "adverb (fukushi)": "Adverb",
+    "adverb taking the `to' particle": "Adverb (to)",
+    "conjunction": "Conjunction",
+    "interjection (kandoushi)": "Interjection",
+    "particle": "Particle",
+    "prefix": "Prefix",
+    "suffix": "Suffix",
+    "counter": "Counter",
+    "numeric": "Numeric",
+    "expression (phrase, clause, etc.)": "Expression",
+    "Ichidan verb": "Ichidan verb",
+    "Ichidan verb - kureru special class": "Ichidan verb (kureru)",
+    "Ichidan verb - zuru verb (alternative form of -jiru verbs)": "Ichidan verb (zuru)",
+    "Godan verb with `u' ending": "Godan verb (u)",
+    "Godan verb with `u' ending (special class)": "Godan verb (u, irr.)",
+    "Godan verb with `ku' ending": "Godan verb (ku)",
+    "Godan verb with `gu' ending": "Godan verb (gu)",
+    "Godan verb with `su' ending": "Godan verb (su)",
+    "Godan verb with `tsu' ending": "Godan verb (tsu)",
+    "Godan verb with `nu' ending": "Godan verb (nu)",
+    "Godan verb with `bu' ending": "Godan verb (bu)",
+    "Godan verb with `mu' ending": "Godan verb (mu)",
+    "Godan verb with `ru' ending": "Godan verb (ru)",
+    "Godan verb with `ru' ending (irregular verb)": "Godan verb (ru, irr.)",
+    "Godan verb - aru special class": "Godan verb (aru)",
+    "Godan verb - Iku/Yuku special class": "Godan verb (iku)",
+    "Kuru verb - special class": "Kuru verb",
+    "suru verb - included": "Suru verb",
+    "suru verb - special class": "Suru verb (special)",
+    "suru verb - precursor to the above": "Suru precursor",
+    "noun or verb acting prenominally": "Prenominal",
+    "auxiliary": "Auxiliary",
+    "auxiliary verb": "Aux. verb",
+    "auxiliary adjective": "Aux. adjective",
+    "unclassified": "Unclassified",
+}
+
+COMMON_PRIORITIES = {"ichi1", "ichi2", "spec1", "spec2", "news1", "news2"}
+
+KANJIDIC2_URL = "https://www.edrdg.org/kanjidic/kanjidic2.xml.gz"
+
+# Shorten verbose JMdict misc/field/dialect tags for display
+MISC_ABBREV = {
+    "usually written using kana alone": "Kana only",
+    "word usually written using kana alone": "Kana only",
+    "usually written using kanji alone": "Kanji only",
+    "colloquial": "Colloquial",
+    "honorific or respectful (sonkeigo) language": "Honorific",
+    "humble (kenjogo) language": "Humble",
+    "polite (teineigo) language": "Polite",
+    "archaism": "Archaic",
+    "idiomatic expression": "Idiomatic",
+    "abbreviation": "Abbreviation",
+    "slang": "Slang",
+    "internet slang": "Internet slang",
+    "manga slang": "Manga slang",
+    "obsolete term": "Obsolete",
+    "rare term": "Rare",
+    "derogatory": "Derogatory",
+    "vulgar expression or word": "Vulgar",
+    "rude or X-rated term (not displayed in educational software)": "Adult",
+    "onomatopoeic or mimetic word": "Onomatopoeia",
+    "proverb": "Proverb",
+    "poetical term": "Poetic",
+    "familiar language": "Familiar",
+    "female term or language": "Female speech",
+    "male term or language": "Male speech",
+    "children's language": "Children's",
+    "sensitive": "Sensitive",
+    "historical term": "Historical",
+    "jocular, humorous term": "Humorous",
+    "euphemism": "Euphemism",
+    "yojijukugo": "4-char compound",
+}
+
+
+def compute_freq_score(priorities: set) -> int:
+    """Map JMdict priority tags to a 0–5 star frequency score."""
+    score = 0
+    for p in priorities:
+        if len(p) == 4 and p[:2] == "nf" and p[2:].isdigit():
+            nf = int(p[2:])
+            if   nf <=  6: score = max(score, 5)
+            elif nf <= 12: score = max(score, 4)
+            elif nf <= 20: score = max(score, 3)
+            elif nf <= 30: score = max(score, 2)
+            else:          score = max(score, 1)
+        elif p in ("ichi1", "news1", "spec1"):
+            score = max(score, 3)
+        elif p in ("ichi2", "news2", "spec2", "gai1"):
+            score = max(score, 2)
+        elif p == "gai2":
+            score = max(score, 1)
+    return score
+
+
+def download_jmdict() -> bytes:
+    print(f"Downloading {JMDICT_URL} ...")
+    # ftp.edrdg.org has a cert hostname mismatch; disable verification for this build script
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(JMDICT_URL, context=ctx) as resp:
+        compressed = resp.read()
+    print(f"  Downloaded {len(compressed) // 1024 // 1024} MB compressed")
+    data = gzip.decompress(compressed)
+    print(f"  Decompressed to {len(data) // 1024 // 1024} MB")
+    return data
+
+
+def preprocess_xml(xml_bytes: bytes) -> bytes:
+    """
+    ElementTree can't resolve DOCTYPE entities from inline DTDs.
+    Extract them with regex, strip the DOCTYPE block, then substitute.
+    """
+    text = xml_bytes.decode("utf-8")
+
+    # Extract entity definitions from DOCTYPE  <!ENTITY name "value">
+    entities: dict[str, str] = {}
+    for m in re.finditer(r'<!ENTITY\s+(\S+)\s+"([^"]*)">', text):
+        entities[m.group(1)] = m.group(2)
+    print(f"  Found {len(entities)} entity definitions")
+
+    # Remove the entire DOCTYPE block (between <!DOCTYPE and the closing ]>)
+    doctype_start = text.find("<!DOCTYPE")
+    if doctype_start >= 0:
+        doctype_end = text.find("]>", doctype_start)
+        if doctype_end >= 0:
+            text = text[:doctype_start] + text[doctype_end + 2 :]
+
+    # Substitute &entity; references with resolved text
+    for name, value in entities.items():
+        # Escape any XML special chars in the replacement value
+        safe = (
+            value.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+        text = text.replace(f"&{name};", safe)
+
+    return text.encode("utf-8")
+
+
+def create_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE entry (
+            id         INTEGER PRIMARY KEY,
+            is_common  INTEGER NOT NULL DEFAULT 0,
+            freq_score INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE kanji (
+            entry_id   INTEGER NOT NULL,
+            position   INTEGER NOT NULL,
+            text       TEXT    NOT NULL
+        );
+        CREATE TABLE reading (
+            entry_id   INTEGER NOT NULL,
+            position   INTEGER NOT NULL,
+            text       TEXT    NOT NULL,
+            no_kanji   INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE sense (
+            entry_id   INTEGER NOT NULL,
+            position   INTEGER NOT NULL,
+            pos        TEXT    NOT NULL,
+            glosses    TEXT    NOT NULL,
+            misc       TEXT    NOT NULL DEFAULT ''
+        );
+        CREATE TABLE kanjidic (
+            literal      TEXT    PRIMARY KEY,
+            meanings     TEXT    NOT NULL DEFAULT '',
+            on_readings  TEXT    NOT NULL DEFAULT '',
+            kun_readings TEXT    NOT NULL DEFAULT '',
+            jlpt         INTEGER NOT NULL DEFAULT 0,
+            grade        INTEGER NOT NULL DEFAULT 0,
+            stroke_count INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX idx_kanji_text   ON kanji(text);
+        CREATE INDEX idx_reading_text ON reading(text);
+        """
+    )
+
+
+def shorten_pos(raw: str) -> str:
+    return POS_ABBREV.get(raw, raw)
+
+
+def parse_and_insert(xml_bytes: bytes, conn: sqlite3.Connection) -> None:
+    print("Parsing XML and inserting entries...")
+    cur = conn.cursor()
+    root = ET.fromstring(xml_bytes)
+
+    count = 0
+    for entry in root.iter("entry"):
+        entry_id = int(entry.findtext("ent_seq"))
+
+        # Collect all priority tags across all kanji and reading elements
+        all_priorities: set = set()
+        for ele in list(entry.findall("k_ele")) + list(entry.findall("r_ele")):
+            for tag in ("ke_pri", "re_pri"):
+                for pri in ele.findall(tag):
+                    if pri.text:
+                        all_priorities.add(pri.text)
+
+        is_common = 1 if all_priorities & COMMON_PRIORITIES else 0
+        freq_score = compute_freq_score(all_priorities)
+
+        cur.execute("INSERT OR IGNORE INTO entry VALUES (?,?,?)", (entry_id, is_common, freq_score))
+
+        # Kanji forms
+        for pos, k_ele in enumerate(entry.findall("k_ele")):
+            keb = k_ele.findtext("keb")
+            if keb:
+                cur.execute(
+                    "INSERT INTO kanji VALUES (?,?,?)", (entry_id, pos, keb)
+                )
+
+        # Reading forms
+        for pos, r_ele in enumerate(entry.findall("r_ele")):
+            reb = r_ele.findtext("reb")
+            no_kanji = 1 if r_ele.find("re_nokanji") is not None else 0
+            if reb:
+                cur.execute(
+                    "INSERT INTO reading VALUES (?,?,?,?)",
+                    (entry_id, pos, reb, no_kanji),
+                )
+
+        # Senses — POS carries forward until explicitly changed (JMdict convention)
+        current_pos: list[str] = []
+        for pos_idx, sense in enumerate(entry.findall("sense")):
+            new_pos = [shorten_pos(p.text) for p in sense.findall("pos") if p.text]
+            if new_pos:
+                current_pos = new_pos
+
+            glosses = [
+                g.text
+                for g in sense.findall("gloss")
+                if g.text
+                and g.get("{http://www.w3.org/XML/1998/namespace}lang", "eng") == "eng"
+            ]
+            # Fallback: gloss elements with no lang attribute
+            if not glosses:
+                glosses = [g.text for g in sense.findall("gloss") if g.text]
+
+            # Collect misc/field/dialect/s_inf tags
+            misc_parts = []
+            for m in sense.findall("misc"):
+                if m.text:
+                    misc_parts.append(MISC_ABBREV.get(m.text, m.text))
+            for f in sense.findall("field"):
+                if f.text:
+                    misc_parts.append(f.text)
+            for d in sense.findall("dial"):
+                if d.text:
+                    misc_parts.append(d.text)
+            for s in sense.findall("s_inf"):
+                if s.text:
+                    misc_parts.append(s.text)
+            misc_str = "\t".join(misc_parts)
+
+            if glosses:
+                cur.execute(
+                    "INSERT INTO sense VALUES (?,?,?,?,?)",
+                    (
+                        entry_id,
+                        pos_idx,
+                        ",".join(current_pos),
+                        "\t".join(glosses),
+                        misc_str,
+                    ),
+                )
+
+        count += 1
+        if count % 20_000 == 0:
+            conn.commit()
+            print(f"  {count:,} entries...")
+
+    conn.commit()
+    print(f"  Total: {count:,} entries inserted")
+
+
+def download_kanjidic() -> bytes:
+    print(f"Downloading {KANJIDIC2_URL} ...")
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(KANJIDIC2_URL, context=ctx) as resp:
+        compressed = resp.read()
+    data = gzip.decompress(compressed)
+    print(f"  Decompressed to {len(data) // 1024} KB")
+    return data
+
+
+def parse_and_insert_kanjidic(xml_bytes: bytes, conn: sqlite3.Connection) -> None:
+    print("Parsing KANJIDIC2 and inserting kanji entries...")
+    # Strip DOCTYPE block — may contain internal subset [...] before closing >
+    text = xml_bytes.decode("utf-8")
+    doctype_start = text.find("<!DOCTYPE")
+    if doctype_start >= 0:
+        # Look for internal subset end "]>" first, then bare ">"
+        bracket_end = text.find("]>", doctype_start)
+        if bracket_end >= 0:
+            doctype_end = bracket_end + 2  # skip past "]>"
+        else:
+            gt = text.find(">", doctype_start)
+            doctype_end = gt + 1 if gt >= 0 else len(text)
+        text = text[:doctype_start] + text[doctype_end:]
+    root = ET.fromstring(text.encode("utf-8"))
+
+    cur = conn.cursor()
+    count = 0
+    for char in root.iter("character"):
+        literal_el = char.find("literal")
+        if literal_el is None or not literal_el.text:
+            continue
+        literal = literal_el.text.strip()
+
+        misc_el = char.find("misc")
+        grade = 0
+        stroke_count = 0
+        jlpt_raw = 0
+        if misc_el is not None:
+            grade_el = misc_el.find("grade")
+            if grade_el is not None and grade_el.text:
+                try:
+                    grade = int(grade_el.text)
+                except ValueError:
+                    pass
+            sc_el = misc_el.find("stroke_count")
+            if sc_el is not None and sc_el.text:
+                try:
+                    stroke_count = int(sc_el.text)
+                except ValueError:
+                    pass
+            jlpt_el = misc_el.find("jlpt")
+            if jlpt_el is not None and jlpt_el.text:
+                try:
+                    jlpt_raw = int(jlpt_el.text)
+                except ValueError:
+                    pass
+
+        # Convert old JLPT (1-4, 4=easiest) to new N-level (1-4 → N5,N4,N3,N2)
+        # Store as 5=N5, 4=N4, 3=N3, 2=N2, 0=not in JLPT
+        jlpt_n = {4: 5, 3: 4, 2: 3, 1: 2}.get(jlpt_raw, 0)
+
+        on_readings = []
+        kun_readings = []
+        meanings = []
+        rm = char.find("reading_meaning")
+        if rm is not None:
+            for rmg in rm.findall("rmgroup"):
+                for r in rmg.findall("reading"):
+                    r_type = r.get("r_type", "")
+                    if r.text:
+                        if r_type == "ja_on":
+                            on_readings.append(r.text)
+                        elif r_type == "ja_kun":
+                            kun_readings.append(r.text)
+                for m in rmg.findall("meaning"):
+                    lang = m.get("{http://www.w3.org/XML/1998/namespace}lang", "en")
+                    if lang == "en" and m.text:
+                        meanings.append(m.text)
+                    elif not m.get("{http://www.w3.org/XML/1998/namespace}lang") and m.text:
+                        meanings.append(m.text)
+
+        cur.execute(
+            "INSERT OR IGNORE INTO kanjidic VALUES (?,?,?,?,?,?,?)",
+            (
+                literal,
+                "\t".join(meanings),
+                ",".join(on_readings),
+                ",".join(kun_readings),
+                jlpt_n,
+                grade,
+                stroke_count,
+            ),
+        )
+        count += 1
+
+    conn.commit()
+    print(f"  Total: {count:,} kanji inserted")
+
+
+def main() -> None:
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if OUTPUT_PATH.exists():
+        OUTPUT_PATH.unlink()
+        print(f"Removed existing {OUTPUT_PATH}")
+
+    xml_bytes = download_jmdict()
+    print("Pre-processing XML entities...")
+    clean_xml = preprocess_xml(xml_bytes)
+    del xml_bytes  # free memory
+
+    print(f"Building {OUTPUT_PATH} ...")
+    conn = sqlite3.connect(OUTPUT_PATH)
+    conn.execute("PRAGMA journal_mode=OFF")   # faster bulk insert (no WAL during build)
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA cache_size=65536")
+
+    create_schema(conn)
+    parse_and_insert(clean_xml, conn)
+
+    kanjidic_xml = download_kanjidic()
+    parse_and_insert_kanjidic(kanjidic_xml, conn)
+    del kanjidic_xml
+
+    print("Optimizing (ANALYZE + VACUUM)...")
+    conn.execute("ANALYZE")
+    conn.execute("VACUUM")
+    conn.close()
+
+    size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024
+    print(f"\nDone!  {OUTPUT_PATH}  ({size_mb:.1f} MB)")
+    print("\nNext: rebuild the APK so the database is bundled as an asset.")
+    print("  JAVA_HOME='.sdk/jdk17' bash gradlew assembleDebug")
+
+
+if __name__ == "__main__":
+    main()

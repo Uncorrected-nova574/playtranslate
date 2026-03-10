@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Explicitly prohibit cleartext (HTTP) traffic for all domains.
+    All network calls in PlayTranslate use HTTPS (DeepL API, Google Translate).
+    This is the default on API 28+ but stating it explicitly protects
+    against accidental regressions and satisfies Play Store security scanners.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

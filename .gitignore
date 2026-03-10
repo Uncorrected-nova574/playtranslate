@@ -1,0 +1,27 @@
+# Local build config (may contain API keys)
+local.properties
+
+# Build outputs
+build/
+app/build/
+.gradle/
+
+# Android SDK / JDK (bundled toolchain, not part of source)
+.sdk/
+
+# Claude Code
+.claude/
+
+# Release APK (distributed via GitHub Releases, not committed)
+*.apk
+
+# Icon source images
+img/
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+
+# OS
+Thumbs.db

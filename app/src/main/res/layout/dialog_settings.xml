@@ -1,0 +1,421 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/colorBgSurface">
+
+    <!-- Toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="4dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/settings_title"
+            android:textColor="?attr/colorTextPrimary"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnCloseSettings"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:text="✕"
+            android:textColor="?attr/colorTextPrimary"
+            android:textSize="18sp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/colorBgDivider" />
+
+    <!-- Scrollable content -->
+    <ScrollView
+        android:id="@+id/settingsScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <!-- Capture method section (hidden when accessibility is enabled) -->
+            <LinearLayout
+                android:id="@+id/llCaptureMethodSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="?attr/colorBgCard"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Some Features Unavailable"
+                    android:textColor="?attr/colorTextPrimary"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_capture_mp_limitations"
+                    android:textColor="?attr/colorTextHint"
+                    android:textSize="11sp"
+                    android:lineSpacingMultiplier="1.3"
+                    android:layout_marginBottom="10dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCaptureMethodOpenA11y"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="@string/btn_enable_accessibility"
+                    android:backgroundTint="?attr/colorAccentPrimary"
+                    android:textColor="?attr/colorTextOnAccent"
+                    android:textSize="12sp"
+                    app:cornerRadius="6dp" />
+
+            </LinearLayout>
+
+            <!-- Capture method divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorBgDivider"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp" />
+
+            </LinearLayout>
+
+            <!-- Language section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_language"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp"
+                android:alpha="0.38">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Japanese"
+                    android:textColor="?attr/colorTextPrimary"
+                    android:textSize="14sp"
+                    android:background="?attr/colorBgCard"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="10dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" → "
+                    android:textColor="?attr/colorTextHint"
+                    android:textSize="14sp"
+                    android:paddingHorizontal="6dp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="English"
+                    android:textColor="?attr/colorTextPrimary"
+                    android:textSize="14sp"
+                    android:background="?attr/colorBgCard"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="10dp" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_language_hint"
+                android:textColor="?attr/colorTextHint"
+                android:textSize="10sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="20dp" />
+
+            <!-- Language section divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorBgDivider"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Display selector -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_display"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/llDisplayOptions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_display_hint"
+                android:textColor="?attr/colorTextHint"
+                android:textSize="10sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="20dp" />
+
+            <!-- DeepL section divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorBgDivider"
+                android:layout_marginBottom="16dp" />
+
+            <!-- DeepL API Key -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_deepl_key"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/etDeeplKey"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textNoSuggestions"
+                android:hint="@string/hint_deepl_key"
+                android:textSize="12sp"
+                android:textColor="?attr/colorTextPrimary"
+                android:background="?attr/colorBgCard"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="8dp"
+                android:layout_marginTop="4dp"
+                android:fontFamily="monospace"
+                android:singleLine="true" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_deepl_hint"
+                android:textColor="?attr/colorTextHint"
+                android:textSize="10sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="20dp"
+                android:id="@+id/tvDeeplHint" />
+
+            <!-- Anki section divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorBgDivider"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Anki deck selector -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/section_anki_deck"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/tvAnkiDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/anki_section_description"
+                android:textColor="?attr/colorTextHint"
+                android:textSize="11sp"
+                android:lineSpacingMultiplier="1.3"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:id="@+id/tvAnkiPlayStoreLink"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/anki_play_store_link"
+                android:textColor="?attr/colorAccentPrimary"
+                android:textSize="11sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/tvAnkiStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/colorTextHint"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp"
+                android:visibility="gone" />
+
+            <Spinner
+                android:id="@+id/spinnerAnkiDeck"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/colorBgCard"
+                android:popupBackground="?attr/colorBgCard"
+                android:layout_marginTop="4dp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnGrantAnkiPermission"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_grant_anki_permission"
+                android:backgroundTint="?attr/colorAccentPrimary"
+                android:textColor="?attr/colorTextOnAccent"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Live mode section divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorBgDivider"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Capture interval -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Live mode capture interval"
+                    android:textColor="?attr/colorTextPrimary"
+                    android:textSize="14sp" />
+
+                <EditText
+                    android:id="@+id/etCaptureInterval"
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:textSize="14sp"
+                    android:textColor="?attr/colorTextPrimary"
+                    android:background="?attr/colorBgCard"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="6dp"
+                    android:gravity="center"
+                    android:maxLength="3"
+                    android:singleLine="true" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" s"
+                    android:textColor="?attr/colorTextSecondary"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="How often the game screen is captured in live mode. Minimum 1 second."
+                android:textColor="?attr/colorTextHint"
+                android:textSize="10sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Live mode toggle -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Hide live mode button"
+                    android:textColor="?attr/colorTextPrimary"
+                    android:textSize="14sp" />
+
+                <Switch
+                    android:id="@+id/switchHideLiveMode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Hides the live capture button and hint text"
+                android:textColor="?attr/colorTextHint"
+                android:textSize="10sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp" />
+
+            <!-- Theme section divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorBgDivider"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Theme picker -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="THEME"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp"
+                android:letterSpacing="0.15"
+                android:layout_marginBottom="12dp" />
+
+            <LinearLayout
+                android:id="@+id/llThemePicker"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="20dp" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</LinearLayout>

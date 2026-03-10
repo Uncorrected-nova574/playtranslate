@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Custom theme color attributes — set per-theme, referenced via ?attr/ in layouts. -->
+    <attr name="colorBgDark"          format="color" />
+    <attr name="colorBgSurface"       format="color" />
+    <attr name="colorBgCard"          format="color" />
+    <attr name="colorBgDivider"       format="color" />
+    <attr name="colorAccentPrimary"   format="color" />
+    <attr name="colorAccentPrimaryDark" format="color" />
+    <attr name="colorAccentSecondary" format="color" />
+    <attr name="colorTextPrimary"     format="color" />
+    <attr name="colorTextSecondary"   format="color" />
+    <attr name="colorTextHint"        format="color" />
+    <attr name="colorTextTranslation" format="color" />
+    <attr name="colorTextLink"        format="color" />
+    <!-- Text color for content drawn ON top of the accent/primary button color. -->
+    <attr name="colorTextOnAccent"    format="color" />
+</resources>
