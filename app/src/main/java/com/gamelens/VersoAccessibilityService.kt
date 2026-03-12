@@ -48,8 +48,6 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
     private var floatingIconDisplayId: Int = -1
     private var dragLookupController: DragLookupController? = null
 
-    /** True while MainActivity is visible. Set only by notifyAppResumed/notifyAppStopped. */
-    private var appVisible = false
 
     override fun onServiceConnected() {
         instance = this
@@ -147,27 +145,9 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
         return false // pass through to the game
     }
 
-    /** Called from MainActivity.onResume. */
-    fun notifyAppResumed() {
-        appVisible = true
-        if (iconIsOnAppDisplay()) {
-            hideFloatingIcon()
-        } else {
-            // Dual-screen: icon is on a different display, ensure it's showing
-            ensureFloatingIcon()
-        }
-    }
-
-    /** Called from MainActivity.onStop. */
-    fun notifyAppStopped() {
-        appVisible = false
-        ensureFloatingIcon()
-    }
-
     /**
      * Single entry point for all icon visibility updates.
-     * Called from: onServiceConnected, notifyAppResumed/Stopped,
-     * settings toggle, capture display change.
+     * Called from: onServiceConnected, settings toggle, capture display change.
      *
      * Shows, hides, or relocates the icon based on current state.
      */
@@ -177,35 +157,10 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
             hideFloatingIcon()
             return
         }
-        val onAppDisplay = iconIsOnAppDisplay()
-        if (appVisible && onAppDisplay) {
-            Log.d(TAG, "ensureFloatingIcon: hiding (appVisible=$appVisible, onAppDisplay=true)")
-            hideFloatingIcon()
-            return
-        }
         val display = findIconDisplay(prefs) ?: return
         if (floatingIcon != null && floatingIconDisplayId == display.displayId) return
         Log.d(TAG, "ensureFloatingIcon: showing on display ${display.displayId} (current=$floatingIconDisplayId, captureId=${prefs.captureDisplayId})")
         showFloatingIcon(display, prefs)
-    }
-
-    /**
-     * True when the icon's target display is the same physical display the app runs on.
-     * Single-screen (only 1 physical display): always true.
-     * Multi-screen: true only if capture display == app display.
-     *
-     * Note: uses physical display count, NOT Prefs.isSingleScreen().
-     * The debug force-single-screen flag changes the UI flow but doesn't
-     * change which physical display the icon belongs on.
-     */
-    private fun iconIsOnAppDisplay(): Boolean {
-        val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val displays = dm.displays
-        if (displays.size <= 1) return true
-        val prefs = Prefs(this)
-        val appDisplayId = displays.firstOrNull { it.displayId != Display.DEFAULT_DISPLAY }?.displayId
-            ?: Display.DEFAULT_DISPLAY
-        return prefs.captureDisplayId == appDisplayId
     }
 
     private fun showFloatingIcon(display: Display, prefs: Prefs) {

@@ -236,8 +236,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Hide the floating icon while our app is in the foreground
-        PlayTranslateAccessibilityService.instance?.notifyAppResumed()
+        PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
         checkOnboardingState()
         if (onboardingContainer.visibility == View.VISIBLE) return
         if (isSingleScreen()) return
@@ -248,12 +247,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        // App is no longer visible — show the floating icon again
-        PlayTranslateAccessibilityService.instance?.notifyAppStopped()
     }
 
     override fun onDestroy() {
-        PlayTranslateAccessibilityService.instance?.hideFloatingIcon()
         (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
             .unregisterDisplayListener(displayListener)
         if (isLiveMode) captureService?.stopLive()

@@ -115,6 +115,11 @@ class CaptureService : Service() {
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        PlayTranslateAccessibilityService.instance?.hideFloatingIcon()
+    }
+
     override fun onDestroy() {
         stopLive()
         serviceScope.cancel()

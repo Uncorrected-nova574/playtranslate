@@ -20,12 +20,14 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.drawable.DrawableCompat
+import com.gamelens.R
 
 /**
  * Overlay popup showing a Japanese word lookup result.
- * Left 1/4: word (kanji) + furigana. Right 3/4: scrollable definitions + frequency.
- * Fixed height. Positioned above or below the finger with an arrow pointing to it.
- * Dismissable via X or tap outside.
+ * Left 1/4: word (kanji) + furigana. Middle: scrollable definitions + frequency.
+ * Right: Anki button (if installed). Dismissable via tap outside.
  */
 class WordLookupPopup(
     val ctx: Context,
@@ -34,8 +36,12 @@ class WordLookupPopup(
     private var popupView: View? = null
     private var backdropView: View? = null
     var onDismiss: (() -> Unit)? = null
+    var onAnkiTap: (() -> Unit)? = null
     /** Suppresses onDismiss callback during show()'s internal dismiss(). */
     private var suppressDismissCallback = false
+
+    /** Whether to show the Anki button (set before first show). */
+    var showAnkiButton = false
 
     /** The word currently displayed — used to skip redundant redraws. */
     var currentWord: String? = null
@@ -47,6 +53,7 @@ class WordLookupPopup(
     private val arrowSizePx = dp(10)
     private val popupCornerRadius = dp(12).toFloat()
     private val bgColor = Color.parseColor("#242424")
+    private val ankiColumnW = dp(44)
 
     fun show(
         word: String,
@@ -65,7 +72,8 @@ class WordLookupPopup(
         suppressDismissCallback = false
         currentWord = word
 
-        val popupW = (screenW * 0.85f).toInt().coerceAtMost(dp(360))
+        val baseW = (screenW * 0.85f).toInt().coerceAtMost(dp(360))
+        val popupW = if (showAnkiButton) baseW + ankiColumnW else baseW
         val maxCardH = dp(160)
         val minCardH = dp(64)
         val margin = dp(40)
@@ -115,9 +123,6 @@ class WordLookupPopup(
                 } else false
             }
         }
-        // Backdrop is focusable so it receives joystick generic motion events.
-        // Touch events are handled by the onTouchListener above.
-        // Focus is released when the popup is dismissed.
         val backdropParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -253,7 +258,7 @@ class WordLookupPopup(
             }
         })
 
-        // Right 3/4: scrollable definitions + frequency
+        // Middle: scrollable definitions + frequency
         val rightScroll = ScrollView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             isVerticalScrollBarEnabled = true
@@ -316,19 +321,34 @@ class WordLookupPopup(
 
         rightScroll.addView(rightCol)
         hLayout.addView(rightScroll)
-        root.addView(hLayout)
 
-        // X dismiss button
-        val closeBtn = ImageView(ctx).apply {
-            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            setColorFilter(Color.parseColor("#A0A0A0"))
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-            layoutParams = FrameLayout.LayoutParams(dp(28), dp(28)).apply {
-                gravity = Gravity.TOP or Gravity.END
+        // Anki button column (right side)
+        if (showAnkiButton) {
+            // Divider before Anki button
+            hLayout.addView(View(ctx).apply {
+                setBackgroundColor(Color.parseColor("#2E2E2E"))
+                layoutParams = LinearLayout.LayoutParams(dp(1), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                    setMargins(dp(8), 0, dp(4), 0)
+                }
+            })
+
+            val ankiIcon = ImageView(ctx).apply {
+                val drawable = AppCompatResources.getDrawable(ctx, R.drawable.ic_anki)?.mutate()
+                if (drawable != null) {
+                    DrawableCompat.setTint(drawable, Color.parseColor("#A0A0A0"))
+                    setImageDrawable(drawable)
+                }
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                layoutParams = LinearLayout.LayoutParams(ankiColumnW - dp(13), LinearLayout.LayoutParams.MATCH_PARENT).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setOnClickListener { onAnkiTap?.invoke() }
             }
-            setOnClickListener { dismiss() }
+            hLayout.addView(ankiIcon)
         }
-        root.addView(closeBtn)
+
+        root.addView(hLayout)
 
         return root
     }

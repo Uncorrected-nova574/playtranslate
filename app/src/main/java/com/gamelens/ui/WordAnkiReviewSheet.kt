@@ -1,5 +1,6 @@
 package com.gamelens.ui
 
+import android.content.DialogInterface
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -28,6 +29,13 @@ class WordAnkiReviewSheet : DialogFragment() {
 
     private var includePhoto = true
     private var deckEntries: List<Map.Entry<Long, String>> = emptyList()
+    /** Optional listener called when this sheet is dismissed (used by WordAnkiReviewActivity). */
+    var onDismissListener: DialogInterface.OnDismissListener? = null
+
+    override fun onDismiss(dialog: DialogInterface) {
+        super.onDismiss(dialog)
+        onDismissListener?.onDismiss(dialog)
+    }
 
     override fun getTheme(): Int = fullScreenDialogTheme(requireContext())
 
@@ -140,7 +148,7 @@ class WordAnkiReviewSheet : DialogFragment() {
         append("<style>")
         append("body{margin:0;padding:0;}")
         append("</style>")
-        append("<div style=\"text-align:center;font-size:2.2em;padding:32px 16px;\">$word</div>")
+        append("<div class=\"gl-front\" style=\"text-align:center;font-size:2.2em;padding:32px 16px;\">$word</div>")
     }
 
     private fun buildBackHtml(

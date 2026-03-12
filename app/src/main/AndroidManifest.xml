@@ -34,6 +34,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Lightweight host for Anki review when launched from the floating overlay. -->
+        <activity
+            android:name=".ui.WordAnkiReviewActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.PlayTranslate" />
+
         <!-- Foreground service that owns the OCR + translation pipeline. -->
         <service
             android:name=".CaptureService"

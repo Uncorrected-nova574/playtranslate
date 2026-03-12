@@ -1,15 +1,18 @@
 package com.gamelens.ui
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.gamelens.AnkiManager
 import com.gamelens.OcrManager
 import com.gamelens.PlayTranslateAccessibilityService
 import com.gamelens.dictionary.DictionaryManager
 import com.gamelens.model.JishoWord
 import kotlinx.coroutines.*
+import java.io.File
 import kotlin.math.abs
 
 /**
@@ -39,6 +42,10 @@ class DragLookupController(
     private var ocrJob: Job? = null
     private var lookupJob: Job? = null
     private var lastWord: String? = null
+    /** Current dictionary entry shown in the popup — used for Anki export. */
+    private var currentEntry: JishoWord? = null
+    /** Path to the screenshot captured at drag start — used for Anki export. */
+    private var screenshotPath: String? = null
 
     // Hold-still detection with wobble tolerance
     private var anchorX = 0f
@@ -46,6 +53,14 @@ class DragLookupController(
     private var holdTimerScheduled = false
     private var holdRetryCount = 0
     private val MAX_HOLD_RETRIES = 30
+
+    init {
+        val service = PlayTranslateAccessibilityService.instance
+        if (service != null && AnkiManager(service).isAnkiDroidInstalled()) {
+            popup.showAnkiButton = true
+            popup.onAnkiTap = { launchAnkiReview() }
+        }
+    }
 
     val isPopupShowing: Boolean get() = popup.isShowing
 
@@ -207,6 +222,8 @@ class DragLookupController(
         // Run bitmap processing + OCR off the main thread to avoid drag stutter
         val lines = withContext(Dispatchers.Default) {
             try {
+                // Save screenshot for potential Anki export
+                screenshotPath = saveScreenshot(bitmap)
                 ocrManager.recogniseWithPositions(bitmap, "ja")
             } finally {
                 bitmap.recycle()
@@ -348,6 +365,7 @@ class DragLookupController(
     }
 
     private fun showPopup(entry: JishoWord, fingerX: Int, fingerY: Int) {
+        currentEntry = entry
         val form = entry.japanese.firstOrNull()
         val word = form?.word ?: form?.reading ?: entry.slug
         val reading = form?.reading
@@ -370,5 +388,49 @@ class DragLookupController(
             screenW = screenW,
             screenH = screenH
         )
+    }
+
+    private fun launchAnkiReview() {
+        val entry = currentEntry ?: return
+        val service = PlayTranslateAccessibilityService.instance ?: return
+
+        val form = entry.japanese.firstOrNull()
+        val word = form?.word ?: form?.reading ?: entry.slug
+        val reading = form?.reading?.takeIf { it != word } ?: ""
+        val pos = entry.senses.firstOrNull()?.partsOfSpeech
+            ?.filter { it.isNotBlank() }?.joinToString(" · ") ?: ""
+        val definition = entry.senses
+            .filter { it.englishDefinitions.isNotEmpty() }
+            .mapIndexed { i, sense ->
+                val prefix = if (entry.senses.size > 1) "${i + 1}. " else ""
+                prefix + sense.englishDefinitions.joinToString("; ")
+            }
+            .joinToString("\n")
+
+        val intent = Intent(service, WordAnkiReviewActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(WordAnkiReviewActivity.EXTRA_WORD, word)
+            putExtra(WordAnkiReviewActivity.EXTRA_READING, reading)
+            putExtra(WordAnkiReviewActivity.EXTRA_POS, pos)
+            putExtra(WordAnkiReviewActivity.EXTRA_DEFINITION, definition)
+            putExtra(WordAnkiReviewActivity.EXTRA_SCREENSHOT_PATH, screenshotPath)
+        }
+        service.startActivity(intent)
+        popup.dismiss()
+    }
+
+    private fun saveScreenshot(bitmap: Bitmap): String? {
+        val service = PlayTranslateAccessibilityService.instance ?: return null
+        return try {
+            val dir = File(service.cacheDir, "screenshots").apply { mkdirs() }
+            val file = File(dir, "drag_${System.currentTimeMillis()}.jpg")
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            // Keep at most 5 screenshots
+            dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(5)?.forEach { it.delete() }
+            file.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "saveScreenshot failed: ${e.message}")
+            null
+        }
     }
 }
