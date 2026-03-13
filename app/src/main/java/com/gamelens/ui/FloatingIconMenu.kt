@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.MotionEvent
@@ -37,8 +38,13 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
     var onHideIcon: (() -> Unit)? = null
     var onDismiss: (() -> Unit)? = null
     var onRegionSelected: ((top: Float, bottom: Float, left: Float, right: Float) -> Unit)? = null
-    var onStartLive: (() -> Unit)? = null
+    var onToggleLive: (() -> Unit)? = null
     var isSingleScreen: Boolean = false
+    var isLiveMode: Boolean = false
+        set(value) {
+            field = value
+            updateLiveButton()
+        }
 
     private val dimPaint = Paint().apply {
         color = Color.argb(170, 0, 0, 0)
@@ -58,6 +64,10 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
     private var confirmDialog: LinearLayout? = null
     private val appName: String = context.getString(R.string.app_name)
 
+    private lateinit var liveIcon: TextView
+    private lateinit var liveLabel: TextView
+    private lateinit var liveBtn: FrameLayout
+
     // ── Drag state ────────────────────────────────────────────────────────
     private var isDragging = false
     private var dragStartX = 0f
@@ -67,63 +77,110 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
 
     init {
         setWillNotDraw(false)
-        // Must use LAYER_TYPE_SOFTWARE or HARDWARE for saveLayer / PorterDuff to work
         setLayerType(LAYER_TYPE_HARDWARE, null)
 
-        val btnSize = (44 * dp).toInt()
+        val btnSize = (54 * dp).toInt()
 
+        // Rounded rectangle container for both buttons
         menuCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#D9222222"))
+                cornerRadius = 20 * dp
+            }
+            elevation = 12 * dp
+            gravity = Gravity.CENTER_HORIZONTAL
+            val hPad = (14 * dp).toInt()
+            val vPad = (12 * dp).toInt()
+            setPadding(hPad, vPad, hPad, vPad)
             visibility = View.INVISIBLE
         }
 
-        // Play button (start live mode)
-        val playBtn = FrameLayout(context).apply {
+        // Live mode button + label
+        val liveGroup = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (10 * dp).toInt() }
+        }
+        liveBtn = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#40A040"))
-                cornerRadius = 12 * dp
+                cornerRadius = 14 * dp
             }
-            elevation = 8 * dp
             layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
-                bottomMargin = (8 * dp).toInt()
+                gravity = Gravity.CENTER_HORIZONTAL
             }
-            setOnClickListener { onStartLive?.invoke() }
+            setOnClickListener { onToggleLive?.invoke() }
         }
-        val playIcon = TextView(context).apply {
+        liveIcon = TextView(context).apply {
             text = "\u25B6"
             setTextColor(Color.WHITE)
-            textSize = 18f
+            textSize = 22f
             gravity = Gravity.CENTER
         }
-        playBtn.addView(playIcon, LayoutParams(
+        liveBtn.addView(liveIcon, LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        menuCard.addView(playBtn)
+        liveLabel = TextView(context).apply {
+            text = "Auto Translate"
+            setTextColor(Color.parseColor("#CCFFFFFF"))
+            textSize = 9f
+            gravity = Gravity.CENTER_HORIZONTAL
+            setTypeface(null, Typeface.BOLD)
+            maxWidth = btnSize
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (4 * dp).toInt() }
+        }
+        liveGroup.addView(liveBtn)
+        liveGroup.addView(liveLabel)
+        menuCard.addView(liveGroup)
 
-        // Hide button (X)
+        // Hide button + label
+        val hideGroup = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
         val hideBtn = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#E04040"))
-                cornerRadius = 12 * dp
+                cornerRadius = 14 * dp
             }
-            elevation = 8 * dp
-            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize)
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
             setOnClickListener { showConfirmDialog() }
         }
-
-        val xIcon = TextView(context).apply {
+        val hideIcon = TextView(context).apply {
             text = "\u2715"
             setTextColor(Color.WHITE)
-            textSize = 20f
+            textSize = 24f
             gravity = Gravity.CENTER
         }
-        hideBtn.addView(xIcon, LayoutParams(
+        hideBtn.addView(hideIcon, LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
-
-        menuCard.addView(hideBtn)
+        val hideLabel = TextView(context).apply {
+            text = "Hide"
+            setTextColor(Color.parseColor("#CCFFFFFF"))
+            textSize = 9f
+            gravity = Gravity.CENTER_HORIZONTAL
+            setTypeface(null, Typeface.BOLD)
+            maxWidth = btnSize
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (4 * dp).toInt() }
+        }
+        hideGroup.addView(hideBtn)
+        hideGroup.addView(hideLabel)
+        menuCard.addView(hideGroup)
 
         addView(menuCard, LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -149,15 +206,25 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
         })
     }
 
+    private fun updateLiveButton() {
+        if (isLiveMode) {
+            liveIcon.text = "\u275A\u275A" // ❚❚ pause
+            liveLabel.text = "Pause"
+            (liveBtn.background as? GradientDrawable)?.setColor(Color.parseColor("#D4A020"))
+        } else {
+            liveIcon.text = "\u25B6" // ▶ play
+            liveLabel.text = "Auto Translate"
+            (liveBtn.background as? GradientDrawable)?.setColor(Color.parseColor("#40A040"))
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         val sel = selectionRect
         if (sel != null && isDragging) {
-            // Draw dim everywhere, then punch a transparent hole for the selection
             val sc = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
             canvas.drawRect(sel, clearPaint)
             canvas.restoreToCount(sc)
-            // White stroke border around selection
             canvas.drawRect(sel, selectionStrokePaint)
         } else {
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
@@ -185,7 +252,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // Check if touch is on the menu card
                 val loc = IntArray(2)
                 menuCard.getLocationOnScreen(loc)
                 val menuRect = RectF(
@@ -195,7 +261,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
                 if (menuRect.contains(event.rawX, event.rawY)) {
                     return super.onTouchEvent(event)
                 }
-                // Outside menu — potential drag
                 potentialDrag = true
                 dragStartX = event.x
                 dragStartY = event.y
@@ -207,7 +272,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
                 val dy = event.y - dragStartY
                 if (!isDragging && (dx * dx + dy * dy > touchSlop * touchSlop)) {
                     isDragging = true
-                    // Hide menu card and instruction during drag
                     menuCard.visibility = View.GONE
                     instructionText.visibility = View.GONE
                 }
@@ -241,7 +305,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
                     selectionRect = null
                     return true
                 }
-                // Tap outside menu → dismiss
                 potentialDrag = false
                 onDismiss?.invoke()
                 return true
@@ -260,7 +323,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
     // ── Confirmation dialog ──────────────────────────────────────────────
 
     private fun showConfirmDialog() {
-        // Hide the menu button
         menuCard.visibility = View.GONE
         instructionText.visibility = View.GONE
 
@@ -276,8 +338,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
             setPadding(pad, pad, pad, (16 * dp).toInt())
         }
 
-        // App icon — image has baked-in padding, so use an oversized ImageView
-        // inside a smaller circular clip frame to make the artwork fill the circle.
         val circleSize = (56 * dp).toInt()
         val imgSize = (circleSize * 1.5f).toInt()
         val offset = (circleSize - imgSize) / 2
@@ -304,14 +364,12 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
         iconFrame.addView(icon)
         dialog.addView(iconFrame)
 
-        // Title
         dialog.addView(TextView(context).apply {
             text = "Hide $appName icon?"
-
             setTextColor(Color.WHITE)
             textSize = 17f
             gravity = Gravity.CENTER
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -321,7 +379,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
             }
         })
 
-        // Subtitle
         dialog.addView(TextView(context).apply {
             text = if (isSingleScreen) {
                 "This icon is required to show translations on screen. You can re-enable it in $appName settings."
@@ -340,7 +397,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
             }
         })
 
-        // Button row
         val btnRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -390,7 +446,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
         btnRow.addView(btnHide)
         dialog.addView(btnRow)
 
-        // Set max width
         val maxW = (280 * dp).toInt()
         val dlp = LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
@@ -398,7 +453,6 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
         addView(dialog, dlp)
         confirmDialog = dialog
 
-        // Animate in
         dialog.alpha = 0f
         dialog.scaleX = 0.9f
         dialog.scaleY = 0.9f

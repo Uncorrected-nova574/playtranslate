@@ -314,9 +314,6 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
             prefs.overlayIconFraction = fraction
         }
         icon.onTap = {
-            if (MainActivity.isLiveModeActive) {
-                sendMainActivityIntent(MainActivity.ACTION_STOP_LIVE)
-            }
             showFloatingMenu(display, icon)
         }
 
@@ -362,15 +359,20 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
         val menu = FloatingIconMenu(createDisplayContext(display))
         menu.isSingleScreen = Prefs.isSingleScreen(this)
 
+        menu.isLiveMode = MainActivity.isLiveModeActive
         menu.onHideIcon = {
             dismissFloatingMenu()
             Prefs(this).showOverlayIcon = false
             hideFloatingIcon()
         }
         menu.onDismiss = { dismissFloatingMenu() }
-        menu.onStartLive = {
+        menu.onToggleLive = {
             dismissFloatingMenu()
-            sendMainActivityIntent(MainActivity.ACTION_START_LIVE)
+            if (MainActivity.isLiveModeActive) {
+                sendMainActivityIntent(MainActivity.ACTION_STOP_LIVE)
+            } else {
+                sendMainActivityIntent(MainActivity.ACTION_START_LIVE)
+            }
         }
         menu.onRegionSelected = { top, bottom, left, right ->
             dismissFloatingMenu()
