@@ -65,21 +65,25 @@ class TranslationResultFragment : Fragment() {
     private lateinit var mainWordsContainer: LinearLayout
     private lateinit var btnCopyOriginal: ImageButton
     private lateinit var btnCopyTranslation: ImageButton
-    private lateinit var btnMainAddToAnki: ImageButton
+    private lateinit var btnToggleTranslation: ImageButton
+    private lateinit var btnToggleOriginal: ImageButton
+    private lateinit var btnToggleWords: ImageButton
+    private lateinit var translationContent: LinearLayout
+    private lateinit var originalContent: LinearLayout
+    private lateinit var wordsContent: LinearLayout
     private lateinit var labelOriginal: TextView
     private lateinit var labelTranslation: TextView
     private lateinit var tvNoWords: TextView
     private lateinit var tvTransliteration: TextView
-    private lateinit var translationSection: LinearLayout
-    private lateinit var translationHiddenSection: LinearLayout
-    private lateinit var btnRevealTranslation: com.google.android.material.button.MaterialButton
-    private lateinit var btnAnkiNoTranslation: com.google.android.material.button.MaterialButton
 
     private var wordLookupJob: Job? = null
     val mainWordResults = mutableMapOf<String, Triple<String, String, Int>>()
     var lastResult: TranslationResult? = null
         private set
     private var editTranslationManager: TranslationManager? = null
+
+    /** Called when Anki button enabled state changes (e.g. after word lookups complete). */
+    var onAnkiEnabledChanged: ((Boolean) -> Unit)? = null
 
     private val romajiTransliterator by lazy {
         try { android.icu.text.Transliterator.getInstance("Any-Latin; NFD; [:Nonspacing Mark:] Remove; NFC") }
@@ -122,15 +126,16 @@ class TranslationResultFragment : Fragment() {
         mainWordsContainer   = view.findViewById(R.id.mainWordsContainer)
         btnCopyOriginal      = view.findViewById(R.id.btnCopyOriginal)
         btnCopyTranslation   = view.findViewById(R.id.btnCopyTranslation)
-        btnMainAddToAnki     = view.findViewById(R.id.btnMainAddToAnki)
+        btnToggleTranslation = view.findViewById(R.id.btnToggleTranslation)
+        btnToggleOriginal    = view.findViewById(R.id.btnToggleOriginal)
+        btnToggleWords       = view.findViewById(R.id.btnToggleWords)
+        translationContent   = view.findViewById(R.id.translationContent)
+        originalContent      = view.findViewById(R.id.originalContent)
+        wordsContent         = view.findViewById(R.id.wordsContent)
         labelOriginal        = view.findViewById(R.id.labelOriginal)
         labelTranslation     = view.findViewById(R.id.labelTranslation)
         tvNoWords            = view.findViewById(R.id.tvNoWords)
         tvTransliteration    = view.findViewById(R.id.tvTransliteration)
-        translationSection       = view.findViewById(R.id.translationSection)
-        translationHiddenSection = view.findViewById(R.id.translationHiddenSection)
-        btnRevealTranslation     = view.findViewById(R.id.btnRevealTranslation)
-        btnAnkiNoTranslation     = view.findViewById(R.id.btnAnkiNoTranslation)
     }
 
     private fun setupButtons() {
@@ -140,80 +145,38 @@ class TranslationResultFragment : Fragment() {
         btnCopyTranslation.setOnClickListener {
             copyToClipboard(tvTranslation.text?.toString() ?: return@setOnClickListener)
         }
-        btnMainAddToAnki.setOnClickListener {
-            host?.onInteraction()
-            val result = lastResult ?: return@setOnClickListener
-            val ctx = context ?: return@setOnClickListener
-            val ankiManager = AnkiManager(ctx)
-            when {
-                !ankiManager.isAnkiDroidInstalled() ->
-                    Toast.makeText(ctx, getString(R.string.anki_not_installed), Toast.LENGTH_SHORT).show()
-                !ankiManager.hasPermission() ->
-                    AlertDialog.Builder(ctx)
-                        .setTitle(R.string.anki_permission_rationale_title)
-                        .setMessage(R.string.anki_permission_rationale_message)
-                        .setPositiveButton(R.string.btn_continue) { _, _ ->
-                            host?.getAnkiPermissionLauncher()?.launch(AnkiManager.PERMISSION)
-                        }
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show()
-                else ->
-                    AnkiReviewBottomSheet.newInstance(
-                        result.originalText, result.translatedText, mainWordResults, result.screenshotPath
-                    ).show(childFragmentManager, AnkiReviewBottomSheet.TAG)
-            }
+        btnToggleTranslation.setOnClickListener {
+            prefs.hideTranslationSection = !prefs.hideTranslationSection
+            applyTranslationVisibility()
         }
-        btnRevealTranslation.setOnClickListener {
-            val result = lastResult ?: return@setOnClickListener
-            val text = result.originalText
-            btnRevealTranslation.isEnabled = false
-            btnRevealTranslation.text = "…"
-            viewLifecycleOwner.lifecycleScope.launch {
-                try {
-                    val svc = host?.getCaptureService()
-                    val (translated, note) = if (svc != null) {
-                        svc.translateOnce(text)
-                    } else {
-                        val tm = editTranslationManager
-                            ?: TranslationManager(selectedSourceLang(), selectedTargetLang()).also { editTranslationManager = it }
-                        tm.ensureModelReady()
-                        Pair(tm.translate(text), null)
-                    }
-                    lastResult = result.copy(translatedText = translated)
-                    tvTranslation.text = translated
-                    tvTranslationNote.text = note ?: ""
-                    tvTranslationNote.visibility = if (note != null) View.VISIBLE else View.GONE
-                    translationSection.visibility       = View.VISIBLE
-                    translationHiddenSection.visibility = View.GONE
-                } catch (_: Exception) {
-                    btnRevealTranslation.isEnabled = true
-                    btnRevealTranslation.text = getString(R.string.btn_reveal_translation)
-                }
-            }
+        btnToggleOriginal.setOnClickListener {
+            prefs.hideOriginalSection = !prefs.hideOriginalSection
+            applyOriginalVisibility()
         }
-        btnAnkiNoTranslation.setOnClickListener {
-            host?.onInteraction()
-            val result = lastResult ?: return@setOnClickListener
-            val ctx = context ?: return@setOnClickListener
-            val ankiManager = AnkiManager(ctx)
-            when {
-                !ankiManager.isAnkiDroidInstalled() ->
-                    Toast.makeText(ctx, getString(R.string.anki_not_installed), Toast.LENGTH_SHORT).show()
-                !ankiManager.hasPermission() ->
-                    AlertDialog.Builder(ctx)
-                        .setTitle(R.string.anki_permission_rationale_title)
-                        .setMessage(R.string.anki_permission_rationale_message)
-                        .setPositiveButton(R.string.btn_continue) { _, _ ->
-                            host?.getAnkiPermissionLauncher()?.launch(AnkiManager.PERMISSION)
-                        }
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show()
-                else ->
-                    AnkiReviewBottomSheet.newInstance(
-                        result.originalText, "", mainWordResults, result.screenshotPath
-                    ).show(childFragmentManager, AnkiReviewBottomSheet.TAG)
-            }
+        btnToggleWords.setOnClickListener {
+            prefs.hideWordsSection = !prefs.hideWordsSection
+            applyWordsVisibility()
         }
+    }
+
+    private fun applyTranslationVisibility() {
+        val hidden = prefs.hideTranslationSection
+        translationContent.visibility = if (hidden) View.GONE else View.VISIBLE
+        btnCopyTranslation.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+        btnToggleTranslation.setImageResource(if (hidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility)
+    }
+
+    private fun applyOriginalVisibility() {
+        val hidden = prefs.hideOriginalSection
+        originalContent.visibility = if (hidden) View.GONE else View.VISIBLE
+        btnCopyOriginal.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+        btnToggleOriginal.setImageResource(if (hidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility)
+    }
+
+    private fun applyWordsVisibility() {
+        val hidden = prefs.hideWordsSection
+        wordsContent.visibility = if (hidden) View.GONE else View.VISIBLE
+        btnToggleWords.setImageResource(if (hidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility)
     }
 
     // ── Public API ────────────────────────────────────────────────────────
@@ -226,22 +189,41 @@ class TranslationResultFragment : Fragment() {
         tvTranslation.text = result.translatedText
         tvTranslationNote.text = result.note ?: ""
         tvTranslationNote.visibility = if (result.note != null) View.VISIBLE else View.GONE
-        if (prefs.hideTranslation) {
-            translationSection.visibility       = View.GONE
-            translationHiddenSection.visibility = View.VISIBLE
-            btnRevealTranslation.isEnabled = true
-            btnRevealTranslation.text = getString(R.string.btn_reveal_translation)
-        } else {
-            translationSection.visibility       = View.VISIBLE
-            translationHiddenSection.visibility = View.GONE
-        }
+        applyTranslationVisibility()
+        applyOriginalVisibility()
+        applyWordsVisibility()
         labelOriginal.text    = langDisplayName(selectedSourceLang())
         labelTranslation.text = langDisplayName(selectedTargetLang())
         statusContainer.visibility = View.GONE
         resultsContent.visibility  = View.VISIBLE
         resultsContent.scrollTo(0, 0)
-        btnMainAddToAnki.isEnabled = false
+        onAnkiEnabledChanged?.invoke(false)
         startWordLookups(result.originalText)
+    }
+
+    /** Called by the host activity when its Anki button is tapped. */
+    fun onAnkiClicked() {
+        host?.onInteraction()
+        val result = lastResult ?: return
+        val ctx = context ?: return
+        val ankiManager = AnkiManager(ctx)
+        when {
+            !ankiManager.isAnkiDroidInstalled() ->
+                Toast.makeText(ctx, getString(R.string.anki_not_installed), Toast.LENGTH_SHORT).show()
+            !ankiManager.hasPermission() ->
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.anki_permission_rationale_title)
+                    .setMessage(R.string.anki_permission_rationale_message)
+                    .setPositiveButton(R.string.btn_continue) { _, _ ->
+                        host?.getAnkiPermissionLauncher()?.launch(AnkiManager.PERMISSION)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            else ->
+                AnkiReviewBottomSheet.newInstance(
+                    result.originalText, result.translatedText, mainWordResults, result.screenshotPath
+                ).show(childFragmentManager, AnkiReviewBottomSheet.TAG)
+        }
     }
 
     /** Called by the host when original text is tapped (for edit overlay in MainActivity). */
@@ -322,20 +304,14 @@ class TranslationResultFragment : Fragment() {
         statusContainer.visibility = View.GONE
         resultsContent.visibility = View.VISIBLE
         resultsContent.scrollTo(0, 0)
-        btnMainAddToAnki.isEnabled = false
+        onAnkiEnabledChanged?.invoke(false)
 
         tvTranslation.text = getString(R.string.status_translating)
         tvTranslationNote.text = ""
         tvTranslationNote.visibility = View.GONE
-        if (prefs.hideTranslation) {
-            translationSection.visibility = View.GONE
-            translationHiddenSection.visibility = View.VISIBLE
-            btnRevealTranslation.isEnabled = true
-            btnRevealTranslation.text = getString(R.string.btn_reveal_translation)
-        } else {
-            translationSection.visibility = View.VISIBLE
-            translationHiddenSection.visibility = View.GONE
-        }
+        applyTranslationVisibility()
+        applyOriginalVisibility()
+        applyWordsVisibility()
         startWordLookups(originalText)
     }
 
@@ -364,7 +340,7 @@ class TranslationResultFragment : Fragment() {
             if (tokens.isEmpty()) {
                 tvMainWordsLoading.visibility = View.GONE
                 tvNoWords.visibility = View.VISIBLE
-                btnMainAddToAnki.isEnabled = true
+                onAnkiEnabledChanged?.invoke(true)
                 val romaji = romajiDeferred.await()
                 if (romaji.isNotBlank() && romaji != text && Prefs(requireContext()).showTransliteration) {
                     tvTransliteration.text = romaji
@@ -451,7 +427,7 @@ class TranslationResultFragment : Fragment() {
             val surfaces = surfaceArr.filterNotNull().toMap()
             tvMainWordsLoading.visibility = View.GONE
             tvNoWords.visibility = if (mainWordResults.isEmpty()) View.VISIBLE else View.GONE
-            btnMainAddToAnki.isEnabled = true
+            onAnkiEnabledChanged?.invoke(true)
 
             LastSentenceCache.original = lastResult?.originalText
             LastSentenceCache.translation = lastResult?.translatedText

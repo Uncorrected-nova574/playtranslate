@@ -110,10 +110,6 @@
     <!-- Single-screen mode -->
     <string name="onboarding_a11y_single_title">Enable Accessibility</string>
     <string name="onboarding_a11y_single_body">PlayTranslate needs the Accessibility permission to work on single-screen devices.\n\nWith it, PlayTranslate can:\n• Show a floating overlay icon on your screen\n• Show translated text as an overlay over your game\n• Capture the game screen without leaving the app\n• Display custom capture regions on your screen\n\nIt does not read UI content, monitor input, or access personal data.</string>
-<!-- Hide translation -->\
-    <string name="btn_reveal_translation">Show Translation</string>
-    <string name="settings_hide_translation">Hide translation</string>
-    <string name="settings_hide_translation_hint">Skip automatic translation. Tap "Show Translation" on the results screen to see it on demand.</string>
     <string name="settings_show_transliteration">Show transliteration</string>
     <string name="settings_show_transliteration_hint">Display romanized reading below the original text.</string>
 

@@ -50,8 +50,6 @@ class SettingsBottomSheet : DialogFragment() {
     var onHideLiveModeChanged: (() -> Unit)? = null
 
     private var prefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
-    /** Called when the hide-translation switch changes. */
-    var onHideTranslationChanged: (() -> Unit)? = null
     /** Called when the debug force-single-screen toggle changes. */
     var onScreenModeChanged: (() -> Unit)? = null
 
@@ -259,17 +257,6 @@ class SettingsBottomSheet : DialogFragment() {
         }
         view.findViewById<View>(R.id.rowHideLiveMode).setOnClickListener {
             switchHideLiveMode.toggle()
-        }
-
-        // ── Hide translation (auto-save on toggle) ────────────────────────
-        val switchHideTranslation = view.findViewById<Switch>(R.id.switchHideTranslation)
-        switchHideTranslation.isChecked = prefs.hideTranslation
-        switchHideTranslation.setOnCheckedChangeListener { _, checked ->
-            prefs.hideTranslation = checked
-            onHideTranslationChanged?.invoke()
-        }
-        view.findViewById<View>(R.id.rowHideTranslation).setOnClickListener {
-            switchHideTranslation.toggle()
         }
 
         // ── Show transliteration (auto-save on toggle) ──────────────────

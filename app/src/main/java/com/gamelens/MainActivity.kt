@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
     private lateinit var btnChangeRegion: Button
     private lateinit var btnSettings: ImageButton
     private lateinit var btnClear: ImageButton
+    private lateinit var btnMainAddToAnki: ImageButton
     private lateinit var btnLivePlay: ImageButton
     private lateinit var btnLivePause: ImageButton
     private lateinit var liveProgressRing: CircularProgressIndicator
@@ -258,8 +259,9 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         isInForeground = true
         // Re-wire service callbacks in case TranslationResultActivity overwrote them
         if (serviceConnected) wireServiceCallbacks()
-        // Re-wire fragment listener after config change
+        // Re-wire fragment listeners after config change
         resultFragment?.setOnOriginalTappedListener { offset -> showEditOverlay(offset) }
+        resultFragment?.onAnkiEnabledChanged = { enabled -> btnMainAddToAnki.isEnabled = enabled }
         PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
         checkOnboardingState()
         if (onboardingContainer.visibility == View.VISIBLE) return
@@ -291,6 +293,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         btnChangeRegion      = findViewById(R.id.btnChangeRegion)
         btnSettings          = findViewById(R.id.btnSettings)
         btnClear             = findViewById(R.id.btnClear)
+        btnMainAddToAnki     = findViewById(R.id.btnMainAddToAnki)
         btnLivePlay          = findViewById(R.id.btnLivePlay)
         btnLivePause         = findViewById(R.id.btnLivePause)
         liveProgressRing     = findViewById(R.id.liveProgressRing)
@@ -385,6 +388,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         btnLivePlay.visibility = View.GONE
         btnLivePause.visibility = View.VISIBLE
         btnClear.visibility = View.GONE
+        btnMainAddToAnki.visibility = View.GONE
         updateRegionButton()
         resultFragment?.showStatus(searchingStatusText())
         ensureConfigured()
@@ -402,6 +406,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         val frag = resultFragment
         if (frag != null && frag.isShowingResults) {
             btnClear.visibility = View.VISIBLE
+            btnMainAddToAnki.visibility = View.VISIBLE
         } else {
             frag?.showStatus(getString(R.string.status_idle))
         }
@@ -429,6 +434,12 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         btnClear.setOnClickListener {
             resultFragment?.showStatus(getString(R.string.status_idle))
             btnClear.visibility = View.GONE
+            btnMainAddToAnki.visibility = View.GONE
+        }
+
+        btnMainAddToAnki.setOnClickListener { resultFragment?.onAnkiClicked() }
+        resultFragment?.onAnkiEnabledChanged = { enabled ->
+            btnMainAddToAnki.isEnabled = enabled
         }
     }
 
@@ -457,9 +468,6 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
             }
             sheet.onHideLiveModeChanged = {
                 applyLiveModeVisibilitySetting()
-            }
-            sheet.onHideTranslationChanged = {
-                configureService()
             }
             sheet.onScreenModeChanged = {
                 checkOnboardingState()
@@ -506,7 +514,10 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
                 if (!isLiveMode && overrideRegion == null) configureService()
                 liveProgressRing.visibility = View.GONE
                 resultFragment?.displayResult(result)
-                if (!isLiveMode) btnClear.visibility = View.VISIBLE
+                if (!isLiveMode) {
+                    btnClear.visibility = View.VISIBLE
+                    btnMainAddToAnki.visibility = View.VISIBLE
+                }
             }
         }
         svc.onError = { msg ->
@@ -539,9 +550,10 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         val frag = resultFragment ?: return
         frag.showTranslatingPlaceholder(lineText, segments)
         btnClear.visibility = View.VISIBLE
+        btnMainAddToAnki.visibility = View.VISIBLE
 
         val svc = captureService
-        if (svc != null && svc.isConfigured && !prefs.hideTranslation) {
+        if (svc != null && svc.isConfigured) {
             lifecycleScope.launch {
                 try {
                     val (translated, note) = svc.translateOnce(lineText)

@@ -82,6 +82,12 @@ class TranslationResultActivity : AppCompatActivity(), TranslationResultFragment
 
         findViewById<android.widget.ImageButton>(R.id.btnBack).setOnClickListener { finish() }
 
+        val btnAnki = findViewById<android.widget.ImageButton>(R.id.btnMainAddToAnki)
+        btnAnki.setOnClickListener { resultFragment?.onAnkiClicked() }
+        resultFragment?.onAnkiEnabledChanged = { enabled ->
+            btnAnki.isEnabled = enabled
+        }
+
         resultFragment?.showStatus(getString(R.string.status_capturing))
 
         // Start and bind CaptureService

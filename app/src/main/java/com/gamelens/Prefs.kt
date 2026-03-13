@@ -62,13 +62,21 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_HIDE_LIVE_MODE, false)
         set(v) = sp.edit().putBoolean(KEY_HIDE_LIVE_MODE, v).apply()
 
-    var hideTranslation: Boolean
-        get() = sp.getBoolean(KEY_HIDE_TRANSLATION, false)
-        set(v) = sp.edit().putBoolean(KEY_HIDE_TRANSLATION, v).apply()
-
     var showTransliteration: Boolean
         get() = sp.getBoolean(KEY_SHOW_TRANSLITERATION, false)
         set(v) = sp.edit().putBoolean(KEY_SHOW_TRANSLITERATION, v).apply()
+
+    var hideTranslationSection: Boolean
+        get() = sp.getBoolean(KEY_HIDE_TRANSLATION_SECTION, false)
+        set(v) = sp.edit().putBoolean(KEY_HIDE_TRANSLATION_SECTION, v).apply()
+
+    var hideOriginalSection: Boolean
+        get() = sp.getBoolean(KEY_HIDE_ORIGINAL_SECTION, false)
+        set(v) = sp.edit().putBoolean(KEY_HIDE_ORIGINAL_SECTION, v).apply()
+
+    var hideWordsSection: Boolean
+        get() = sp.getBoolean(KEY_HIDE_WORDS_SECTION, false)
+        set(v) = sp.edit().putBoolean(KEY_HIDE_WORDS_SECTION, v).apply()
 
     /** Capture method chosen during onboarding: "" = not set, "accessibility", "media_projection" */
     var captureMethod: String
@@ -164,7 +172,6 @@ class Prefs(context: Context) {
         private const val KEY_REGION_LIST    = "region_list"
         private const val KEY_DEEPL_KEY      = "deepl_api_key"
         private const val KEY_HIDE_LIVE_MODE        = "hide_live_mode"
-        private const val KEY_HIDE_TRANSLATION      = "hide_translation"
         private const val KEY_THEME_INDEX           = "theme_index"
         private const val KEY_CAPTURE_INTERVAL_SEC  = "capture_interval_sec"
         private const val KEY_CAPTURE_METHOD           = "capture_method"
@@ -174,6 +181,9 @@ class Prefs(context: Context) {
         private const val KEY_OVERLAY_ICON_FRACTION  = "overlay_icon_fraction"
         private const val KEY_SUPPRESS_TRANSITION            = "suppress_next_transition"
         private const val KEY_SHOW_TRANSLITERATION             = "show_transliteration"
+        private const val KEY_HIDE_TRANSLATION_SECTION       = "hide_translation_section"
+        private const val KEY_HIDE_ORIGINAL_SECTION          = "hide_original_section"
+        private const val KEY_HIDE_WORDS_SECTION             = "hide_words_section"
         private const val KEY_DEBUG_FORCE_SINGLE_SCREEN      = "debug_force_single_screen"
         private const val KEY_DEBUG_SHOW_OCR_BOXES           = "debug_show_ocr_boxes"
 

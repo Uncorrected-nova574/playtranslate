@@ -81,7 +81,6 @@ class CaptureService : Service() {
 
     private var gameDisplayId: Int = 0
     private var sourceLang: String = TranslateLanguage.JAPANESE
-    private var skipTranslation: Boolean = false
     private var captureTopFraction: Float    = 0f
     private var captureBottomFraction: Float = 1f
     private var captureLeftFraction: Float   = 0f
@@ -153,7 +152,6 @@ class CaptureService : Service() {
     ) {
         gameDisplayId    = displayId
         this.sourceLang  = sourceLang
-        this.skipTranslation = Prefs(this).hideTranslation
         this.captureTopFraction    = captureTopFraction
         this.captureBottomFraction = captureBottomFraction
         this.captureLeftFraction   = captureLeftFraction
@@ -364,7 +362,7 @@ class CaptureService : Service() {
             val liveGroupTexts = ocrResult.groupTexts
             liveTranslationJob = serviceScope.launch {
                 try {
-                    val (translated, note) = if (skipTranslation) Pair("", null) else translateGroups(liveGroupTexts)
+                    val (translated, note) = translateGroups(liveGroupTexts)
                     if (gen != captureGeneration) return@launch
                     val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                     onResult?.invoke(
@@ -489,12 +487,8 @@ class CaptureService : Service() {
                 return
             }
 
-            val (translated, note) = if (skipTranslation) {
-                Pair("", null)
-            } else {
-                onStatusUpdate?.invoke(getString(R.string.status_translating))
-                translateGroups(ocrResult.groupTexts)
-            }
+            onStatusUpdate?.invoke(getString(R.string.status_translating))
+            val (translated, note) = translateGroups(ocrResult.groupTexts)
 
             // Discard stale results if a newer capture was started while this one
             // was in-flight (OkHttp blocking calls aren't cooperatively cancellable).
@@ -535,7 +529,7 @@ class CaptureService : Service() {
         return Pair(translated, note)
     }
 
-    /** On-demand translation for the "Show Translation" button when hideTranslation is active. */
+    /** On-demand translation for a single text string (used by edit overlay, drag-sentence, etc.). */
     suspend fun translateOnce(text: String): Pair<String, String?> = translate(text)
 
     /**
