@@ -365,6 +365,10 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
             Prefs(this).showOverlayIcon = false
             hideFloatingIcon()
         }
+        menu.onHideTemporary = {
+            dismissFloatingMenu()
+            hideFloatingIcon()
+        }
         menu.onDismiss = { dismissFloatingMenu() }
         menu.onToggleLive = {
             dismissFloatingMenu()

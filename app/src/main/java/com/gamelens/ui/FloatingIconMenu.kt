@@ -36,6 +36,7 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
 
     var onHideIcon: (() -> Unit)? = null
+    var onHideTemporary: (() -> Unit)? = null
     var onDismiss: (() -> Unit)? = null
     var onRegionSelected: ((top: Float, bottom: Float, left: Float, right: Float) -> Unit)? = null
     var onToggleLive: (() -> Unit)? = null
@@ -380,11 +381,7 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
         })
 
         dialog.addView(TextView(context).apply {
-            text = if (isSingleScreen) {
-                "This icon is required to show translations on screen. You can re-enable it in $appName settings."
-            } else {
-                "You can drag this icon over words for quick translations. You can re-enable it in $appName settings."
-            }
+            text = "\u201CHide for Now\u201D brings it back next time you open the app. \u201CTurn Off\u201D disables it until re-enabled in settings."
             setTextColor(Color.parseColor("#AAAAAA"))
             textSize = 13f
             gravity = Gravity.CENTER
@@ -397,35 +394,31 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
             }
         })
 
-        val btnRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
+        val hPad = (20 * dp).toInt()
+        val vPad = (10 * dp).toInt()
+        val btnLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
 
-        val btnCancel = Button(context).apply {
-            text = "Cancel"
+        val btnHideForNow = Button(context).apply {
+            text = "Hide for Now"
             setTextColor(Color.WHITE)
             textSize = 14f
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#444444"))
+                setColor(Color.parseColor("#D4A020"))
                 cornerRadius = 8 * dp
             }
             isAllCaps = false
-            val hPad = (20 * dp).toInt()
-            val vPad = (10 * dp).toInt()
             setPadding(hPad, vPad, hPad, vPad)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = (8 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(btnLp).apply {
+                bottomMargin = (8 * dp).toInt()
             }
-            setOnClickListener { onDismiss?.invoke() }
+            setOnClickListener { onHideTemporary?.invoke() }
         }
 
-        val btnHide = Button(context).apply {
-            text = "Hide"
+        val btnTurnOff = Button(context).apply {
+            text = "Turn Off"
             setTextColor(Color.WHITE)
             textSize = 14f
             background = GradientDrawable().apply {
@@ -433,18 +426,27 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
                 cornerRadius = 8 * dp
             }
             isAllCaps = false
-            val hPad = (20 * dp).toInt()
-            val vPad = (10 * dp).toInt()
             setPadding(hPad, vPad, hPad, vPad)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = (8 * dp).toInt()
+            layoutParams = LinearLayout.LayoutParams(btnLp).apply {
+                bottomMargin = (8 * dp).toInt()
             }
             setOnClickListener { onHideIcon?.invoke() }
         }
 
-        btnRow.addView(btnCancel)
-        btnRow.addView(btnHide)
-        dialog.addView(btnRow)
+        val btnCancel = Button(context).apply {
+            text = "Cancel"
+            setTextColor(Color.parseColor("#AAAAAA"))
+            textSize = 14f
+            setBackgroundColor(Color.TRANSPARENT)
+            isAllCaps = false
+            setPadding(hPad, vPad, hPad, vPad)
+            layoutParams = LinearLayout.LayoutParams(btnLp)
+            setOnClickListener { onDismiss?.invoke() }
+        }
+
+        dialog.addView(btnHideForNow)
+        dialog.addView(btnTurnOff)
+        dialog.addView(btnCancel)
 
         val maxW = (280 * dp).toInt()
         val dlp = LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
