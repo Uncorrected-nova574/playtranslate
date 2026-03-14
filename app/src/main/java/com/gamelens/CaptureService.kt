@@ -36,6 +36,7 @@ import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import com.gamelens.ui.TranslationOverlayView
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
@@ -299,6 +300,18 @@ class CaptureService : Service() {
         liveTranslationJob?.cancel()
         liveTranslationJob = null
         lastLiveOcrText = null
+        PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
+    }
+
+    private fun showLiveOverlay(
+        boxes: List<TranslationOverlayView.TextBox>,
+        cropLeft: Int, cropTop: Int,
+        screenshotW: Int, screenshotH: Int
+    ) {
+        val a11y = PlayTranslateAccessibilityService.instance ?: return
+        val dm = getSystemService(DisplayManager::class.java)
+        val display = dm.getDisplay(gameDisplayId) ?: return
+        a11y.showTranslationOverlay(display, boxes, cropLeft, cropTop, screenshotW, screenshotH)
     }
 
     /**
@@ -382,6 +395,7 @@ class CaptureService : Service() {
                 // No text at all — reset dedup so the next hit retranslates, then notify.
                 raw.recycle()
                 lastLiveOcrText = null
+                PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                 onLiveNoText?.invoke()
                 return
             }
@@ -395,6 +409,7 @@ class CaptureService : Service() {
                 // OCR found text but none in the source language — treat as no text.
                 raw.recycle()
                 lastLiveOcrText = null
+                PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                 onLiveNoText?.invoke()
                 return
             }
@@ -414,14 +429,19 @@ class CaptureService : Service() {
 
             // Save screenshot only when new content will be shown — this keeps the file
             // referenced by lastResult alive until the next real change is detected.
+            val screenshotW = raw.width
+            val screenshotH = raw.height
             val screenshotPath = saveScreenshotToCache(raw)
             raw.recycle()
 
             val liveGroupTexts = ocrResult.groupTexts
+            val liveGroupBounds = ocrResult.groupBounds
             liveTranslationJob = serviceScope.launch {
                 try {
-                    val (translated, note) = translateGroups(liveGroupTexts)
+                    val perGroup = translateGroupsSeparately(liveGroupTexts)
                     if (gen != captureGeneration) return@launch
+                    val translated = perGroup.joinToString("\n\n") { it.first }
+                    val note = perGroup.mapNotNull { it.second }.firstOrNull()
                     val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                     onResult?.invoke(
                         TranslationResult(
@@ -433,6 +453,13 @@ class CaptureService : Service() {
                             note           = note
                         )
                     )
+                    // Show translation overlay on the game screen
+                    if (liveGroupBounds.size == perGroup.size) {
+                        val overlayBoxes = perGroup.zip(liveGroupBounds).map { (tr, bounds) ->
+                            TranslationOverlayView.TextBox(tr.first, bounds)
+                        }
+                        showLiveOverlay(overlayBoxes, left, top, screenshotW, screenshotH)
+                    }
                 } catch (e: Exception) { Log.w(TAG, "Live translation failed: ${e.message}") }
             }
         } catch (e: Exception) { Log.w(TAG, "Live capture cycle failed: ${e.message}") }
@@ -571,18 +598,24 @@ class CaptureService : Service() {
     }
 
     /**
+     * Translates each group in parallel and returns each result separately.
+     */
+    private suspend fun translateGroupsSeparately(groupTexts: List<String>): List<Pair<String, String?>> {
+        if (groupTexts.size <= 1) {
+            return listOf(translate(groupTexts.firstOrNull() ?: ""))
+        }
+        return groupTexts.map { group ->
+            serviceScope.async { translate(group) }
+        }.awaitAll()
+    }
+
+    /**
      * Translates each group in parallel and joins results with double-newline.
      * Returns the combined translated text and an optional note (from ML Kit fallback).
      */
     private suspend fun translateGroups(groupTexts: List<String>): Pair<String, String?> {
-        if (groupTexts.size <= 1) {
-            return translate(groupTexts.firstOrNull() ?: "")
-        }
-        val results = groupTexts.map { group ->
-            serviceScope.async { translate(group) }
-        }.awaitAll()
+        val results = translateGroupsSeparately(groupTexts)
         val translated = results.joinToString("\n\n") { it.first }
-        // Surface a note if any group fell back to ML Kit
         val note = results.mapNotNull { it.second }.firstOrNull()
         return Pair(translated, note)
     }

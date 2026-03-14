@@ -22,6 +22,7 @@ import com.gamelens.ui.FloatingOverlayIcon
 import com.gamelens.ui.OcrDebugOverlayView
 import com.gamelens.ui.RegionDragView
 import com.gamelens.ui.RegionOverlayView
+import com.gamelens.ui.TranslationOverlayView
 import com.gamelens.ui.WordLookupPopup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +61,9 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
     private var floatingMenuWm: WindowManager? = null
     private var debugOverlayView: OcrDebugOverlayView? = null
     private var debugOverlayWm: WindowManager? = null
+    private var translationOverlayView: TranslationOverlayView? = null
+    private var translationOverlayWm: WindowManager? = null
+    private var translationOverlayDisplayId: Int = -1
     private var debugOcrManager: OcrManager? = null
     private val debugHandler = Handler(Looper.getMainLooper())
     private var debugRunning = false
@@ -72,6 +76,7 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         stopDebugOcrLoop()
+        hideTranslationOverlay()
         hideRegionOverlay()
         hideRegionDragOverlay()
         dismissFloatingMenu()
@@ -244,6 +249,46 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
         try { debugOverlayView?.let { debugOverlayWm?.removeView(it) } } catch (_: Exception) {}
         debugOverlayView = null
         debugOverlayWm = null
+    }
+
+    // ── Live translation overlay ─────────────────────────────────────────
+
+    fun showTranslationOverlay(
+        display: Display,
+        boxes: List<TranslationOverlayView.TextBox>,
+        cropLeft: Int, cropTop: Int,
+        screenshotW: Int, screenshotH: Int
+    ) {
+        // Reuse existing view if on the same display; otherwise recreate
+        if (translationOverlayView != null && translationOverlayDisplayId == display.displayId) {
+            translationOverlayView?.setBoxes(boxes, cropLeft, cropTop, screenshotW, screenshotH)
+            return
+        }
+        hideTranslationOverlay()
+        val wm = createDisplayContext(display).getSystemService(WindowManager::class.java) ?: return
+        val view = TranslationOverlayView(createDisplayContext(display)).apply {
+            setBoxes(boxes, cropLeft, cropTop, screenshotW, screenshotH)
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        )
+        wm.addView(view, params)
+        translationOverlayWm = wm
+        translationOverlayView = view
+        translationOverlayDisplayId = display.displayId
+    }
+
+    fun hideTranslationOverlay() {
+        try { translationOverlayView?.let { translationOverlayWm?.removeView(it) } } catch (_: Exception) {}
+        translationOverlayView = null
+        translationOverlayWm = null
+        translationOverlayDisplayId = -1
     }
 
     // ── Floating overlay icon ─────────────────────────────────────────────
@@ -518,13 +563,15 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Hide debug overlay so it doesn't appear in the screenshot.
+        // Hide overlays so they don't appear in the screenshot.
         // The floating icon uses FLAG_SECURE so the compositor excludes it automatically.
         val hadDebugOverlay = debugOverlayView != null
+        val hadTranslationOverlay = translationOverlayView != null
         if (hadDebugOverlay) debugOverlayView?.visibility = android.view.View.INVISIBLE
+        if (hadTranslationOverlay) translationOverlayView?.visibility = android.view.View.INVISIBLE
 
         // Wait for the compositor to process the visibility change before capturing
-        val delay = if (hadDebugOverlay) OVERLAY_HIDE_DELAY_MS else 0L
+        val delay = if (hadDebugOverlay || hadTranslationOverlay) OVERLAY_HIDE_DELAY_MS else 0L
         debugHandler.postDelayed({
             takeScreenshot(
                 displayId,
@@ -532,6 +579,7 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
                 object : TakeScreenshotCallback {
                     override fun onSuccess(screenshot: ScreenshotResult) {
                         if (hadDebugOverlay) debugOverlayView?.visibility = android.view.View.VISIBLE
+                        if (hadTranslationOverlay) translationOverlayView?.visibility = android.view.View.VISIBLE
                         // Copy HardwareBuffer → software Bitmap off the main thread
                         bitmapExecutor.execute {
                             val bitmap = Bitmap
@@ -544,6 +592,7 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
 
                     override fun onFailure(errorCode: Int) {
                         if (hadDebugOverlay) debugOverlayView?.visibility = android.view.View.VISIBLE
+                        if (hadTranslationOverlay) translationOverlayView?.visibility = android.view.View.VISIBLE
                         Log.e(TAG, "takeScreenshot failed on display $displayId, code=$errorCode")
                         onResult(null)
                     }

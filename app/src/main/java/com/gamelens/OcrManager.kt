@@ -54,6 +54,8 @@ class OcrManager {
         val segments: List<TextSegment>,
         /** Text of each OCR group, for per-group translation. */
         val groupTexts: List<String> = emptyList(),
+        /** Bounding box per group in original (pre-scale) bitmap coordinates. */
+        val groupBounds: List<Rect> = emptyList(),
         /** Debug bounding boxes at block/line/element level, or null if debug is off. */
         val debugBoxes: OcrDebugBoxes? = null
     )
@@ -126,6 +128,17 @@ class OcrManager {
         val fullText = fullTextBuilder.toString().trim()
         if (fullText.isBlank()) return null
 
+        // Compute group bounding boxes (union of blocks per group) in original bitmap coords
+        val groupBounds = groups.map { group ->
+            val rects = group.mapNotNull { it.boundingBox }
+            Rect(
+                (rects.minOf { it.left } / scaleFactor).toInt(),
+                (rects.minOf { it.top } / scaleFactor).toInt(),
+                (rects.maxOf { it.right } / scaleFactor).toInt(),
+                (rects.maxOf { it.bottom } / scaleFactor).toInt()
+            )
+        }
+
         val debugBoxes = if (collectDebugBoxes) {
             val blockBoxes = mutableListOf<DebugBox>()
             val lineBoxes = mutableListOf<DebugBox>()
@@ -155,7 +168,7 @@ class OcrManager {
             OcrDebugBoxes(blockBoxes, lineBoxes, elementBoxes, groupBoxes, scaleFactor)
         } else null
 
-        return OcrResult(fullText, segments, groupTexts, debugBoxes)
+        return OcrResult(fullText, segments, groupTexts, groupBounds, debugBoxes)
     }
 
     /**
