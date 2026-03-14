@@ -238,7 +238,7 @@ class TranslationResultFragment : Fragment() {
         val ankiManager = AnkiManager(ctx)
         when {
             !ankiManager.isAnkiDroidInstalled() ->
-                Toast.makeText(ctx, getString(R.string.anki_not_installed), Toast.LENGTH_SHORT).show()
+                showAnkiNotInstalledDialog(ctx)
             !ankiManager.hasPermission() ->
                 AlertDialog.Builder(ctx)
                     .setTitle(R.string.anki_permission_rationale_title)

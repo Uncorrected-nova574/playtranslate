@@ -101,9 +101,11 @@ class WordDetailBottomSheet : DialogFragment() {
 
             // Show Add to Anki button once we have a valid entry
             val ankiManager = AnkiManager(requireContext())
-            if (ankiManager.isAnkiDroidInstalled()) {
-                btnAddAnki.visibility = View.VISIBLE
-                btnAddAnki.setOnClickListener {
+            btnAddAnki.visibility = View.VISIBLE
+            btnAddAnki.setOnClickListener {
+                if (!ankiManager.isAnkiDroidInstalled()) {
+                    showAnkiNotInstalledDialog(requireContext())
+                } else {
                     openWordAnkiReview(word, entry, screenshotPath)
                 }
             }

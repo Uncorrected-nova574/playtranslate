@@ -116,6 +116,9 @@
     <!-- Anki integration -->
     <string name="section_anki_deck">Anki Deck</string>
     <string name="anki_not_installed">Install AnkiDroid to create flashcards</string>
+    <string name="anki_not_installed_title">Create flashcard for review</string>
+    <string name="anki_not_installed_message">Save words you discover while playing and review them later.\n\nPlayTranslate can save translated sentences, vocabulary, and screenshots directly to AnkiDroid, a free spaced-repetition flashcard app.</string>
+    <string name="anki_not_installed_get">Get AnkiDroid</string>
     <string name="anki_section_description">AnkiDroid is a free spaced-repetition flashcard app. Connect it to PlayTranslate to save translated sentences and vocabulary — with the original text, translation, and a screenshot — directly to your Anki decks.</string>
     <string name="anki_play_store_url">https://play.google.com/store/apps/details?id=com.ichi2.anki</string>
     <string name="anki_play_store_link">Get AnkiDroid on Google Play →</string>
