@@ -15,6 +15,8 @@ import android.util.Log
 import android.view.Display
 import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.gamelens.ui.DragLookupController
@@ -65,6 +67,8 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
     private var translationOverlayView: TranslationOverlayView? = null
     private var translationOverlayWm: WindowManager? = null
     private var translationOverlayDisplayId: Int = -1
+    private var touchSentinelView: View? = null
+    private var touchSentinelWm: WindowManager? = null
     private var debugOcrManager: OcrManager? = null
     private val debugHandler = Handler(Looper.getMainLooper())
     private var debugRunning = false
@@ -76,6 +80,7 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        stopInputMonitoring()
         stopDebugOcrLoop()
         hideTranslationOverlay()
         hideRegionOverlay()
@@ -293,17 +298,77 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
 
     // ── Floating overlay icon ─────────────────────────────────────────────
 
+    // ── Input monitoring for live mode ──────────────────────────────────
+
+    private var onGameInput: (() -> Unit)? = null
+
+    /**
+     * Start monitoring gamepad buttons and screen touches on [displayId].
+     * [callback] fires on the main thread for every detected input.
+     */
+    fun startInputMonitoring(displayId: Int, callback: () -> Unit) {
+        onGameInput = callback
+        addTouchSentinel(displayId)
+    }
+
+    fun stopInputMonitoring() {
+        onGameInput = null
+        removeTouchSentinel()
+    }
+
+    /**
+     * A 1×1 transparent overlay on the game display. With FLAG_WATCH_OUTSIDE_TOUCH
+     * every touch elsewhere on the screen delivers ACTION_OUTSIDE without consuming
+     * the event, so the game still receives normal input.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun addTouchSentinel(displayId: Int) {
+        if (touchSentinelView != null) return
+        val dm = getSystemService(DisplayManager::class.java)
+        val display = dm.getDisplay(displayId) ?: return
+        val ctx = createDisplayContext(display)
+        val wm = ctx.getSystemService(WindowManager::class.java) ?: return
+        val view = View(ctx).apply {
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    onGameInput?.invoke()
+                }
+                false
+            }
+        }
+        val params = WindowManager.LayoutParams(
+            1, 1,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            PixelFormat.TRANSLUCENT
+        )
+        wm.addView(view, params)
+        touchSentinelView = view
+        touchSentinelWm = wm
+    }
+
+    private fun removeTouchSentinel() {
+        try { touchSentinelView?.let { touchSentinelWm?.removeView(it) } } catch (_: Exception) {}
+        touchSentinelView = null
+        touchSentinelWm = null
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && dragLookupController?.isPopupShowing == true) {
+        if (event.action == KeyEvent.ACTION_DOWN) {
             val src = event.source
-            if (src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
+            val isGameInput = src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
                 || src and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
                 || KeyEvent.isGamepadButton(event.keyCode)
-            ) {
-                dragLookupController?.dismiss()
+            if (isGameInput) {
+                if (dragLookupController?.isPopupShowing == true) {
+                    dragLookupController?.dismiss()
+                }
+                onGameInput?.invoke()
             }
         }
         return false // pass through to the game

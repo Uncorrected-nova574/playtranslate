@@ -275,32 +275,68 @@ class CaptureService : Service() {
     }
 
     // ── Live mode ─────────────────────────────────────────────────────────
+    //
+    // Interaction-driven: capture once, show overlay, then wait for user
+    // input. On input → hide overlay + start debounce timer. When the
+    // timer expires (no further input) → capture again.
 
-    private var liveJob: Job? = null
+    private var liveActive = false
     private var liveTranslationJob: Job? = null
+    private var interactionDebounceJob: Job? = null
     private var lastLiveOcrText: String? = null
+    /** Cached overlay data so dedup-unchanged frames can re-show instantly. */
+    private var cachedOverlayBoxes: List<TranslationOverlayView.TextBox>? = null
+    private var cachedOverlayCropLeft = 0
+    private var cachedOverlayCropTop = 0
+    private var cachedOverlayScreenW = 0
+    private var cachedOverlayScreenH = 0
 
-    val isLive: Boolean get() = liveJob?.isActive == true
+    val isLive: Boolean get() = liveActive
 
     fun startLive() {
-        liveJob?.cancel()
+        liveActive = true
         lastLiveOcrText = null
-        liveJob = serviceScope.launch {
-            while (true) {
-                runLiveCaptureCycle()
-                val intervalMs = Prefs(this@CaptureService).captureIntervalSec * 1000L
-                delay(intervalMs)
-            }
-        }
+        cachedOverlayBoxes = null
+        interactionDebounceJob?.cancel()
+        liveTranslationJob?.cancel()
+
+        // Listen for gamepad / d-pad / touch input from the AccessibilityService
+        PlayTranslateAccessibilityService.instance
+            ?.startInputMonitoring(gameDisplayId) { onUserInteraction() }
+
+        // Initial capture
+        interactionDebounceJob = serviceScope.launch { runLiveCaptureCycle() }
     }
 
     fun stopLive() {
-        liveJob?.cancel()
-        liveJob = null
+        liveActive = false
+        interactionDebounceJob?.cancel()
+        interactionDebounceJob = null
         liveTranslationJob?.cancel()
         liveTranslationJob = null
         lastLiveOcrText = null
+        cachedOverlayBoxes = null
+        PlayTranslateAccessibilityService.instance?.stopInputMonitoring()
         PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
+    }
+
+    /**
+     * Called (on the main thread) every time a gamepad / d-pad button is
+     * pressed while live mode is active.
+     */
+    private fun onUserInteraction() {
+        if (!liveActive) return
+
+        // Hide overlay immediately so the game is fully visible
+        PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
+        liveTranslationJob?.cancel()
+
+        // (Re)start the settle timer — capture fires once input stops
+        interactionDebounceJob?.cancel()
+        interactionDebounceJob = serviceScope.launch {
+            delay(Prefs(this@CaptureService).captureIntervalSec * 1000L)
+            runLiveCaptureCycle()
+        }
     }
 
     private fun showLiveOverlay(
@@ -395,6 +431,7 @@ class CaptureService : Service() {
                 // No text at all — reset dedup so the next hit retranslates, then notify.
                 raw.recycle()
                 lastLiveOcrText = null
+                cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                 onLiveNoText?.invoke()
                 return
@@ -409,6 +446,7 @@ class CaptureService : Service() {
                 // OCR found text but none in the source language — treat as no text.
                 raw.recycle()
                 lastLiveOcrText = null
+                cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                 onLiveNoText?.invoke()
                 return
@@ -420,6 +458,12 @@ class CaptureService : Service() {
             // same static screen, which would fool an exact-match check every cycle.
             if (!isSignificantChange(lastLiveOcrText ?: "", dedupKey)) {
                 raw.recycle()
+                // Text unchanged — re-show the cached overlay (it was hidden on interaction)
+                val boxes = cachedOverlayBoxes
+                if (boxes != null) {
+                    showLiveOverlay(boxes, cachedOverlayCropLeft, cachedOverlayCropTop,
+                        cachedOverlayScreenW, cachedOverlayScreenH)
+                }
                 return
             }
             lastLiveOcrText = dedupKey
@@ -458,6 +502,12 @@ class CaptureService : Service() {
                         val overlayBoxes = perGroup.zip(liveGroupBounds).map { (tr, bounds) ->
                             TranslationOverlayView.TextBox(tr.first, bounds)
                         }
+                        // Cache for re-display after dedup-unchanged interactions
+                        cachedOverlayBoxes = overlayBoxes
+                        cachedOverlayCropLeft = left
+                        cachedOverlayCropTop = top
+                        cachedOverlayScreenW = screenshotW
+                        cachedOverlayScreenH = screenshotH
                         showLiveOverlay(overlayBoxes, left, top, screenshotW, screenshotH)
                     }
                 } catch (e: Exception) { Log.w(TAG, "Live translation failed: ${e.message}") }
