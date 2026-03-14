@@ -12,11 +12,18 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.gamelens.AnkiManager
 import com.gamelens.CaptureService
 import com.gamelens.Prefs
 import com.gamelens.R
+import com.gamelens.model.TextSegment
+import com.gamelens.model.TranslationResult
 import com.google.mlkit.nl.translate.TranslateLanguage
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Standalone activity that hosts [TranslationResultFragment] for showing
@@ -92,7 +99,10 @@ class TranslationResultActivity : AppCompatActivity(), TranslationResultFragment
             btnAnki.visibility = if (enabled) View.VISIBLE else View.GONE
         }
 
-        resultFragment?.showStatus(getString(R.string.status_capturing))
+        val hasSentence = intent.hasExtra(EXTRA_SENTENCE_TEXT)
+        resultFragment?.showStatus(getString(
+            if (hasSentence) R.string.status_translating else R.string.status_capturing
+        ))
 
         // Start and bind CaptureService
         val svcIntent = Intent(this, CaptureService::class.java)
@@ -114,6 +124,14 @@ class TranslationResultActivity : AppCompatActivity(), TranslationResultFragment
         val svc = captureService ?: return
         val prefs = Prefs(this)
 
+        // Sentence mode: text passed directly from drag-to-lookup popup
+        val sentenceText = intent.getStringExtra(EXTRA_SENTENCE_TEXT)
+        if (sentenceText != null) {
+            handleSentenceMode(svc, sentenceText)
+            return
+        }
+
+        // Region capture mode
         val topFrac    = intent.getFloatExtra(EXTRA_TOP_FRAC, 0f)
         val bottomFrac = intent.getFloatExtra(EXTRA_BOTTOM_FRAC, 1f)
         val leftFrac   = intent.getFloatExtra(EXTRA_LEFT_FRAC, 0f)
@@ -156,6 +174,39 @@ class TranslationResultActivity : AppCompatActivity(), TranslationResultFragment
         svc.captureOnce()
     }
 
+    private fun handleSentenceMode(svc: CaptureService, sentenceText: String) {
+        val screenshotPath = intent.getStringExtra(EXTRA_SCREENSHOT_PATH)
+        val segments = sentenceText.map { TextSegment(it.toString()) }
+        val frag = resultFragment ?: return
+
+        // Ensure the service is configured for translation
+        svc.configure(
+            displayId  = Prefs(this).captureDisplayId,
+            sourceLang = TranslateLanguage.JAPANESE,
+            targetLang = TranslateLanguage.ENGLISH
+        )
+
+        frag.showTranslatingPlaceholder(sentenceText, segments)
+
+        lifecycleScope.launch {
+            try {
+                val (translated, note) = svc.translateOnce(sentenceText)
+                val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                val result = TranslationResult(
+                    originalText = sentenceText,
+                    segments = segments,
+                    translatedText = translated,
+                    timestamp = timestamp,
+                    screenshotPath = screenshotPath,
+                    note = note
+                )
+                frag.displayResult(result)
+            } catch (e: Exception) {
+                frag.showError(e.message ?: "Translation failed")
+            }
+        }
+    }
+
     private fun applyTheme() {
         val idx = getSharedPreferences("playtranslate_prefs", MODE_PRIVATE)
             .getInt("theme_index", 0)
@@ -173,5 +224,6 @@ class TranslationResultActivity : AppCompatActivity(), TranslationResultFragment
         const val EXTRA_LEFT_FRAC = "extra_left_frac"
         const val EXTRA_RIGHT_FRAC = "extra_right_frac"
         const val EXTRA_SCREENSHOT_PATH = "extra_screenshot_path"
+        const val EXTRA_SENTENCE_TEXT = "extra_sentence_text"
     }
 }

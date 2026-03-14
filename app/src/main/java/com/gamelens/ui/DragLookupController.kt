@@ -65,6 +65,9 @@ class DragLookupController(
         if (service != null && AnkiManager(service).isAnkiDroidInstalled()) {
             popup.showAnkiButton = true
             popup.onAnkiTap = { launchAnkiReview() }
+        } else if (!MainActivity.isInForeground) {
+            popup.showOpenButton = true
+            popup.onOpenTap = { openSentenceInApp() }
         }
     }
 
@@ -478,6 +481,18 @@ class DragLookupController(
                 cache.wordResults = results
             }
         }
+    }
+
+    private fun openSentenceInApp() {
+        val sentence = currentSentence ?: return
+        val service = PlayTranslateAccessibilityService.instance ?: return
+        popup.dismiss()
+        val intent = Intent(service, TranslationResultActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(TranslationResultActivity.EXTRA_SENTENCE_TEXT, sentence)
+            putExtra(TranslationResultActivity.EXTRA_SCREENSHOT_PATH, screenshotPath)
+        }
+        service.startActivity(intent)
     }
 
     private fun sendLineToMainApp(lineText: String) {

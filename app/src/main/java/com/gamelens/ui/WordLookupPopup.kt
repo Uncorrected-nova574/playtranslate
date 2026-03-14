@@ -37,11 +37,15 @@ class WordLookupPopup(
     private var backdropView: View? = null
     var onDismiss: (() -> Unit)? = null
     var onAnkiTap: (() -> Unit)? = null
+    var onOpenTap: (() -> Unit)? = null
     /** Suppresses onDismiss callback during show()'s internal dismiss(). */
     private var suppressDismissCallback = false
 
     /** Whether to show the Anki button (set before first show). */
     var showAnkiButton = false
+
+    /** Whether to show the "open in app" button (set before first show). */
+    var showOpenButton = false
 
     /** The word currently displayed — used to skip redundant redraws. */
     var currentWord: String? = null
@@ -73,7 +77,8 @@ class WordLookupPopup(
         currentWord = word
 
         val baseW = (screenW * 0.85f).toInt().coerceAtMost(dp(360))
-        val popupW = if (showAnkiButton) baseW + ankiColumnW else baseW
+        val hasRightButton = showAnkiButton || showOpenButton
+        val popupW = if (hasRightButton) baseW + ankiColumnW else baseW
         val maxCardH = dp(160)
         val minCardH = dp(64)
         val margin = dp(40)
@@ -322,9 +327,9 @@ class WordLookupPopup(
         rightScroll.addView(rightCol)
         hLayout.addView(rightScroll)
 
-        // Anki button column (right side)
-        if (showAnkiButton) {
-            // Divider before Anki button
+        // Right-side button column (Anki or Open in app)
+        if (showAnkiButton || showOpenButton) {
+            // Divider before button
             hLayout.addView(View(ctx).apply {
                 setBackgroundColor(Color.parseColor("#2E2E2E"))
                 layoutParams = LinearLayout.LayoutParams(dp(1), LinearLayout.LayoutParams.MATCH_PARENT).apply {
@@ -332,8 +337,10 @@ class WordLookupPopup(
                 }
             })
 
-            val ankiIcon = ImageView(ctx).apply {
-                val drawable = AppCompatResources.getDrawable(ctx, R.drawable.ic_anki)?.mutate()
+            val iconRes = if (showAnkiButton) R.drawable.ic_anki else R.drawable.ic_open_in_new
+            val onTap = if (showAnkiButton) onAnkiTap else onOpenTap
+            val icon = ImageView(ctx).apply {
+                val drawable = AppCompatResources.getDrawable(ctx, iconRes)?.mutate()
                 if (drawable != null) {
                     DrawableCompat.setTint(drawable, Color.parseColor("#A0A0A0"))
                     setImageDrawable(drawable)
@@ -343,9 +350,9 @@ class WordLookupPopup(
                     gravity = Gravity.CENTER_VERTICAL
                 }
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setOnClickListener { onAnkiTap?.invoke() }
+                setOnClickListener { onTap?.invoke() }
             }
-            hLayout.addView(ankiIcon)
+            hLayout.addView(icon)
         }
 
         root.addView(hLayout)
