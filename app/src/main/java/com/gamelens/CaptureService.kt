@@ -447,6 +447,7 @@ class CaptureService : Service() {
                     val pct = pixelDiffPercent(refPixels, currentPixels)
                     if (pct >= SCENE_CHANGE_THRESHOLD) {
                         sceneMoving = true
+                        ++captureGeneration // invalidate in-flight work
                         PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                         liveTranslationJob?.cancel()
                     }
@@ -511,6 +512,10 @@ class CaptureService : Service() {
      */
     private fun onUserInteraction() {
         if (!liveActive) return
+
+        // Invalidate any in-flight capture/translation so stale results
+        // aren't shown after the user has moved on.
+        ++captureGeneration
 
         // Hide overlay immediately so the game is fully visible
         PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
@@ -631,6 +636,7 @@ class CaptureService : Service() {
 
     private suspend fun runLiveCaptureCycle() {
         if (!isConfigured) return
+        val cycleGen = captureGeneration
         try {
             val raw: Bitmap = captureScreen(gameDisplayId) ?: return
 
@@ -648,9 +654,13 @@ class CaptureService : Service() {
                 Bitmap.createBitmap(raw, left, top, (right - left).coerceAtLeast(1), (bottom - top).coerceAtLeast(1))
             else raw
 
+            if (cycleGen != captureGeneration) { raw.recycle(); return } // invalidated during capture
+
             val ocrBitmap = blackoutFloatingIcon(bitmap, left, top)
             val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang)
             if (ocrBitmap !== raw) ocrBitmap.recycle()
+
+            if (cycleGen != captureGeneration) { raw.recycle(); return } // invalidated during OCR
 
             if (ocrResult == null) {
                 // No text at all — reset dedup so the next hit retranslates, then notify.
@@ -684,6 +694,7 @@ class CaptureService : Service() {
             if (!isSignificantChange(lastLiveOcrText ?: "", dedupKey)) {
                 raw.recycle()
                 // Text unchanged — re-show the cached overlay (it was hidden on interaction)
+                if (cycleGen != captureGeneration) return // invalidated during OCR
                 val boxes = cachedOverlayBoxes
                 if (boxes != null) {
                     showLiveOverlay(boxes, cachedOverlayCropLeft, cachedOverlayCropTop,
