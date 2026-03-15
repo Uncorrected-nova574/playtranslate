@@ -26,7 +26,9 @@ class TranslationOverlayView(context: Context) : View(context) {
         /** Bounding box in original bitmap pixel coordinates. */
         val bounds: Rect,
         /** Average color of the game content behind this box (ARGB). */
-        val bgColor: Int = Color.argb(200, 0, 0, 0)
+        val bgColor: Int = Color.argb(200, 0, 0, 0),
+        /** Text color — estimated from game text or chosen for contrast. */
+        val textColor: Int = Color.WHITE
     )
 
     private val dp = context.resources.displayMetrics.density
@@ -172,12 +174,7 @@ class TranslationOverlayView(context: Context) : View(context) {
             // Text fills the full background box minus a small margin
             val availW = (screenRect.width() - 2 * textMargin).toInt().coerceAtLeast(1)
             val availH = (screenRect.height() - 2 * textMargin).coerceAtLeast(0f)
-            val r = Color.red(box.bgColor)
-            val g = Color.green(box.bgColor)
-            val b = Color.blue(box.bgColor)
-            val luminance = 0.299 * r + 0.587 * g + 0.114 * b
-            val textColor = if (luminance > 128) Color.BLACK else Color.WHITE
-            val layout = fitText(box.translatedText, availW, availH, textColor)
+            val layout = fitText(box.translatedText, availW, availH, box.textColor)
             DrawnBox(screenRect, layout, box.bgColor)
         }
     }

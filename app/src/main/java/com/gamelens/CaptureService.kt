@@ -741,20 +741,26 @@ class CaptureService : Service() {
                     )
                     // Show translation overlay on the game screen
                     if (liveGroupBounds.size == perGroup.size) {
-                        // Sample average colors from the downsampled reference
-                        val groupColors = liveGroupBounds.map { bounds ->
-                            averageColor(colorRef,
-                                (bounds.left + left) / colorScale,
-                                (bounds.top + top) / colorScale,
-                                (bounds.right + left) / colorScale,
-                                (bounds.bottom + top) / colorScale)
+                        // Sample background colors from a ring OUTSIDE each OCR box
+                        // (avoids sampling text pixels). Text color is white or black
+                        // for contrast against the sampled background.
+                        val buffer = 10 / colorScale
+                        val overlayBoxes = perGroup.zip(liveGroupBounds).map { (tr, bounds) ->
+                            val sl = (bounds.left + left) / colorScale
+                            val st = (bounds.top + top) / colorScale
+                            val sr = (bounds.right + left) / colorScale
+                            val sb = (bounds.bottom + top) / colorScale
+
+                            val bgColor = averageColor(colorRef,
+                                sl - buffer, st - buffer, sr + buffer, sb + buffer,
+                                excludeInner = android.graphics.Rect(sl, st, sr, sb))
+
+                            val textColor = if (colorLuminance(bgColor) > 128)
+                                android.graphics.Color.BLACK else android.graphics.Color.WHITE
+
+                            TranslationOverlayView.TextBox(tr.first, bounds, bgColor, textColor)
                         }
                         colorRef.recycle()
-                        val overlayBoxes = perGroup.zip(liveGroupBounds).zip(groupColors)
-                            .map { (pair, color) ->
-                                val (tr, bounds) = pair
-                                TranslationOverlayView.TextBox(tr.first, bounds, color)
-                            }
                         // Cache for re-display after dedup-unchanged interactions
                         cachedOverlayBoxes = overlayBoxes
                         cachedOverlayCropLeft = left
@@ -768,7 +774,16 @@ class CaptureService : Service() {
         } catch (e: Exception) { Log.w(TAG, "Live capture cycle failed: ${e.message}") }
     }
 
-    private fun averageColor(bitmap: Bitmap, l: Int, t: Int, r: Int, b: Int): Int {
+    private fun colorLuminance(color: Int): Double {
+        return 0.299 * android.graphics.Color.red(color) +
+            0.587 * android.graphics.Color.green(color) +
+            0.114 * android.graphics.Color.blue(color)
+    }
+
+    private fun averageColor(
+        bitmap: Bitmap, l: Int, t: Int, r: Int, b: Int,
+        excludeInner: android.graphics.Rect? = null
+    ): Int {
         val left = l.coerceIn(0, bitmap.width - 1)
         val top = t.coerceIn(0, bitmap.height - 1)
         val right = r.coerceIn(left + 1, bitmap.width)
@@ -776,6 +791,8 @@ class CaptureService : Service() {
         var rSum = 0L; var gSum = 0L; var bSum = 0L; var count = 0
         for (y in top until bottom step 4) {
             for (x in left until right step 4) {
+                // Skip pixels inside the exclusion rect (used for outer-ring sampling)
+                if (excludeInner != null && excludeInner.contains(x, y)) continue
                 val pixel = bitmap.getPixel(x, y)
                 rSum += android.graphics.Color.red(pixel)
                 gSum += android.graphics.Color.green(pixel)
@@ -783,8 +800,8 @@ class CaptureService : Service() {
                 count++
             }
         }
-        if (count == 0) return android.graphics.Color.argb(200, 0, 0, 0)
-        return android.graphics.Color.argb(200,
+        if (count == 0) return android.graphics.Color.argb(230, 0, 0, 0)
+        return android.graphics.Color.argb(230,
             (rSum / count).toInt(), (gSum / count).toInt(), (bSum / count).toInt())
     }
 
