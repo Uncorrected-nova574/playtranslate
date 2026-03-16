@@ -655,25 +655,33 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
         menu.activeRegion = CaptureService.instance?.activeRegion
         menu.onRegionSelected = { top, bottom, left, right ->
             dismissFloatingMenu()
+            // Configure the service with the dragged region — persists for
+            // all future captures until the user changes it.
+            CaptureService.instance?.let { svc ->
+                val prefs = Prefs(this)
+                svc.configure(
+                    displayId             = prefs.captureDisplayId,
+                    sourceLang            = prefs.sourceLang,
+                    targetLang            = prefs.targetLang,
+                    captureTopFraction    = top,
+                    captureBottomFraction = bottom,
+                    captureLeftFraction   = left,
+                    captureRightFraction  = right,
+                    regionLabel           = "Drawn Region"
+                )
+            }
             if (MainActivity.isLiveModeActive) {
-                // In live mode: update the capture region and continue live
-                CaptureService.instance?.let { svc ->
-                    val prefs = Prefs(this)
-                    svc.configure(
-                        displayId             = prefs.captureDisplayId,
-                        sourceLang            = prefs.sourceLang,
-                        targetLang            = prefs.targetLang,
-                        captureTopFraction    = top,
-                        captureBottomFraction = bottom,
-                        captureLeftFraction   = left,
-                        captureRightFraction  = right,
-                        regionLabel           = "Drawn Region"
-                    )
-                    hideTranslationOverlay()
-                    svc.refreshLiveOverlay()
-                }
+                hideTranslationOverlay()
+                CaptureService.instance?.refreshLiveOverlay()
             } else {
-                handleRegionSelection(display.displayId, top, bottom, left, right)
+                val effectivelySingleScreen = Prefs.isSingleScreen(this) || !MainActivity.isInForeground
+                if (effectivelySingleScreen) {
+                    // Single-screen: capture screenshot before launching activity
+                    handleRegionSelection(display.displayId, top, bottom, left, right)
+                } else {
+                    // Dual-screen: service is already configured, just capture
+                    sendMainActivityIntent(MainActivity.ACTION_REGION_CAPTURE)
+                }
             }
         }
         menu.onClearRegion = {
@@ -823,22 +831,24 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
                 val top = fracs[0]; val bottom = fracs[1]
                 val left = fracs[2]; val right = fracs[3]
                 hideRegionEditor()
+                // Configure the service with the edited region — persists
+                CaptureService.instance?.let { svc ->
+                    val prefs = Prefs(this@PlayTranslateAccessibilityService)
+                    svc.configure(
+                        displayId             = prefs.captureDisplayId,
+                        sourceLang            = prefs.sourceLang,
+                        targetLang            = prefs.targetLang,
+                        captureTopFraction    = top,
+                        captureBottomFraction = bottom,
+                        captureLeftFraction   = left,
+                        captureRightFraction  = right,
+                        regionLabel           = "Drawn Region"
+                    )
+                }
                 if (MainActivity.isLiveModeActive) {
-                    CaptureService.instance?.let { svc ->
-                        val prefs = Prefs(this@PlayTranslateAccessibilityService)
-                        svc.configure(
-                            displayId             = prefs.captureDisplayId,
-                            sourceLang            = prefs.sourceLang,
-                            targetLang            = prefs.targetLang,
-                            captureTopFraction    = top,
-                            captureBottomFraction = bottom,
-                            captureLeftFraction   = left,
-                            captureRightFraction  = right,
-                            regionLabel           = "Drawn Region"
-                        )
-                        svc.refreshLiveOverlay()
-                    }
+                    CaptureService.instance?.refreshLiveOverlay()
                 } else {
+                    // Single-screen: capture screenshot before launching activity
                     handleRegionSelection(display.displayId, top, bottom, left, right)
                 }
             }

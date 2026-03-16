@@ -377,7 +377,8 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
     private fun updateRegionButton() {
         val list = prefs.getRegionList()
         val entry = list.getOrElse(prefs.captureRegionIndex) { Prefs.DEFAULT_REGION_LIST[0] }
-        val label = overrideRegionLabel ?: entry.label
+        val serviceLabel = captureService?.captureRegionLabel?.takeIf { it.isNotEmpty() }
+        val label = overrideRegionLabel ?: serviceLabel ?: entry.label
         if (isLiveMode) {
             val prefix = "Capturing "
             btnCapturing.text = SpannableStringBuilder(prefix + label).apply {
@@ -541,13 +542,12 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
             runOnUiThread {
                 editTranslationJob?.cancel()
                 editTranslationJob = null
-                // Clear dragged-region override after capture completes and
-                // restore the default region for future captures.
-                // Use the static isLiveModeActive (not the instance isLiveMode)
-                // so this works even when live mode was started from the floating
-                // icon via toggleLiveDirect, which doesn't set isLiveMode.
-                if (!isLiveModeActive) {
-                    if (overrideRegion != null) clearOverride()
+                // If a temporary override was active (e.g. "Translate Once"
+                // from the region picker), clear it and restore the saved
+                // region. Persistent regions (e.g. floating menu drag) don't
+                // use overrides, so they stick.
+                if (!isLiveModeActive && overrideRegion != null) {
+                    clearOverride()
                     configureService()
                 }
                 liveProgressRing.visibility = View.GONE
@@ -615,18 +615,12 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
 
     // ── Region capture from floating icon ─────────────────────────────────
 
+    @Suppress("UNUSED_PARAMETER")
     private fun handleRegionCapture(intent: Intent) {
-        val topFrac    = intent.getFloatExtra(EXTRA_TOP_FRAC, 0f)
-        val bottomFrac = intent.getFloatExtra(EXTRA_BOTTOM_FRAC, 1f)
-        val leftFrac   = intent.getFloatExtra(EXTRA_LEFT_FRAC, 0f)
-        val rightFrac  = intent.getFloatExtra(EXTRA_RIGHT_FRAC, 1f)
-
         if (isLiveMode) pauseLiveMode()
 
-        // Use the dragged region for this capture only — don't persist it.
-        overrideRegionLabel = DRAGGED_REGION_LABEL
-        overrideRegion = floatArrayOf(topFrac, bottomFrac, leftFrac, rightFrac)
-        applyOverrideIfActive()
+        // The service is already configured with the dragged region
+        // by the caller — just update the UI label and capture.
         updateRegionButton()
         captureService?.captureOnce()
     }
