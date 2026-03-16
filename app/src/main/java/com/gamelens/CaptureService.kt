@@ -103,31 +103,8 @@ class CaptureService : Service() {
 
     fun setMediaProjection(resultCode: Int, data: Intent) {
         mediaProjection?.stop()
-        // On API 34+, upgrade the foreground service type to include
-        // mediaProjection BEFORE calling getMediaProjection() — Android 14
-        // requires the FGS type to be active when the projection starts.
-        // The manifest declares specialUse only; mediaProjection is added
-        // at runtime after the user grants consent.
-        if (Build.VERSION.SDK_INT >= 34) {
-            try {
-                startForeground(
-                    NOTIF_ID, buildNotification(),
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-                )
-            } catch (_: Exception) {}
-        }
         val mgr = getSystemService(MediaProjectionManager::class.java)
-        val mp = mgr.getMediaProjection(resultCode, data)
-        // API 34+ requires registering a callback before createVirtualDisplay().
-        if (Build.VERSION.SDK_INT >= 34) {
-            mp.registerCallback(object : android.media.projection.MediaProjection.Callback() {
-                override fun onStop() {
-                    mediaProjection = null
-                }
-            }, Handler(Looper.getMainLooper()))
-        }
-        mediaProjection = mp
+        mediaProjection = mgr.getMediaProjection(resultCode, data)
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -139,17 +116,7 @@ class CaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (Build.VERSION.SDK_INT >= 34) {
-            // Explicitly request only specialUse at startup. The manifest
-            // also declares mediaProjection, but that type is activated
-            // later in setMediaProjection() after the user grants consent.
-            startForeground(
-                NOTIF_ID, buildNotification(),
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NOTIF_ID, buildNotification())
-        }
+        startForeground(NOTIF_ID, buildNotification())
         return START_STICKY
     }
 
@@ -326,44 +293,24 @@ class CaptureService : Service() {
 
     val isLive: Boolean get() = liveActive
 
-    /**
-     * True when MediaProjection is available on API 34+ — captures exclude
-     * our overlays, so we can poll on a timer without flicker or needing
-     * to hide overlays. No joystick sentinel needed (avoids eating controls).
-     */
-    private val useTimerBasedLive: Boolean
-        get() = Build.VERSION.SDK_INT >= 34 && mediaProjection != null
-
-    private var liveTimerJob: Job? = null
-
     fun startLive() {
         liveActive = true
         lastLiveOcrText = null
         cachedOverlayBoxes = null
         interactionDebounceJob?.cancel()
         liveTranslationJob?.cancel()
-        liveTimerJob?.cancel()
 
         // Buttons and touch are detected via onKeyEvent and touch sentinel.
         PlayTranslateAccessibilityService.instance
             ?.startInputMonitoring(gameDisplayId) { onUserInteraction() }
 
-        if (useTimerBasedLive) {
-            // API 34+: timer-based polling. MediaProjection captures only
-            // the game task — our overlays are excluded from OCR.
-            startLiveTimer()
-        } else {
-            // API < 34: interaction-driven capture. Scene-change detection
-            // via pixel-diff handles joystick/d-pad movement (no sentinel
-            // needed — zero key eating, zero nav bar flicker).
-            interactionDebounceJob = serviceScope.launch { runLiveCaptureCycle() }
-        }
+        // Interaction-driven capture. Scene-change detection via pixel-diff
+        // handles joystick/d-pad movement.
+        interactionDebounceJob = serviceScope.launch { runLiveCaptureCycle() }
     }
 
     fun stopLive() {
         liveActive = false
-        liveTimerJob?.cancel()
-        liveTimerJob = null
         interactionDebounceJob?.cancel()
         interactionDebounceJob = null
         liveTranslationJob?.cancel()
@@ -427,7 +374,6 @@ class CaptureService : Service() {
      * async callbacks, no shared mutable state, no race conditions.
      */
     private fun startSceneChangeDetection(overlayBoxes: List<android.graphics.Rect>) {
-        if (useTimerBasedLive) return
         stopSceneChangeDetection()
 
         sceneCheckJob = serviceScope.launch {
@@ -527,48 +473,30 @@ class CaptureService : Service() {
         return changed.toFloat() / a.size
     }
 
-    /** API 34+ timer-based polling: capture every N seconds. */
-    private fun startLiveTimer() {
-        liveTimerJob?.cancel()
-        liveTimerJob = serviceScope.launch {
-            while (liveActive) {
-                runLiveCaptureCycle()
-                delay(Prefs(this@CaptureService).captureIntervalSec * 1000L)
-            }
-        }
-    }
-
     /**
      * Called (on the main thread) every time user input is detected
-     * (button press/release, touch, joystick) while live mode is active.
+     * (button press/release, touch) while live mode is active.
      */
     private fun onUserInteraction() {
         if (!liveActive) return
 
-        // Invalidate any in-flight capture/translation so stale results
-        // aren't shown after the user has moved on.
         ++captureGeneration
 
-        // Hide overlay immediately so the game is fully visible
+        // Hide overlay so the next captureDisplay screenshot doesn't
+        // include our translations.
         PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
         liveTranslationJob?.cancel()
         stopSceneChangeDetection()
 
-        if (useTimerBasedLive) {
-            // API 34+: restart the timer so next capture happens after
-            // the settle delay, not mid-interaction.
-            startLiveTimer()
-        } else {
-            // API < 34: debounce until input stops
-            interactionDebounceJob?.cancel()
-            interactionDebounceJob = serviceScope.launch {
-                val settleMs = Prefs(this@CaptureService).captureIntervalSec * 1000L
+        // Debounce until input stops
+        interactionDebounceJob?.cancel()
+        interactionDebounceJob = serviceScope.launch {
+            val settleMs = Prefs(this@CaptureService).captureIntervalSec * 1000L
+            delay(settleMs)
+            while (PlayTranslateAccessibilityService.instance?.isInputActive == true) {
                 delay(settleMs)
-                while (PlayTranslateAccessibilityService.instance?.isInputActive == true) {
-                    delay(settleMs)
-                }
-                runLiveCaptureCycle()
             }
+            runLiveCaptureCycle()
         }
     }
 
@@ -583,8 +511,8 @@ class CaptureService : Service() {
         val display = dm.getDisplay(gameDisplayId) ?: return
         a11y.showTranslationOverlay(display, boxes, cropLeft, cropTop, screenshotW, screenshotH)
 
-        // Start scene-change detection (API < 34 only). The coroutine
-        // captures its own reference frame after a short delay.
+        // Start scene-change detection. The coroutine captures its own
+        // reference frame after a short delay.
         val fullDisplayBoxes = boxes.map { b ->
             android.graphics.Rect(
                 b.bounds.left + cropLeft,
@@ -597,21 +525,11 @@ class CaptureService : Service() {
     }
 
     /**
-     * Captures the given display.
-     *
-     * On API 34+ (Android 14) with MediaProjection: captures only the game's
-     * task, excluding our accessibility overlays. No need to hide/show them.
-     *
-     * Otherwise: uses AccessibilityService.takeScreenshot (hides overlays
-     * briefly via Choreographer to get a clean frame), falling back to
-     * MediaProjection if the AccessibilityService isn't available.
+     * Captures the given display using AccessibilityService.takeScreenshot
+     * (hides overlays briefly via Choreographer to get a clean frame),
+     * falling back to MediaProjection if the AccessibilityService isn't available.
      */
     private suspend fun captureScreen(displayId: Int): Bitmap? {
-        // On API 34+, MediaProjection is task-based — it captures only
-        // the game, not our overlays. Prefer it when available.
-        if (Build.VERSION.SDK_INT >= 34 && mediaProjection != null) {
-            return captureScreenViaMediaProjection(displayId)
-        }
         val a11y = PlayTranslateAccessibilityService.instance
         return if (a11y != null) {
             suspendCancellableCoroutine { cont ->

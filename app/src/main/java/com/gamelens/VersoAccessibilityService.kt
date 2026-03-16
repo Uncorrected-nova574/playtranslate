@@ -681,14 +681,6 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
     private fun toggleLiveDirect(start: Boolean) {
         val svc = CaptureService.instance ?: return
         if (start) {
-            // On API 34+, request MediaProjection via a transparent Activity
-            // so the game stays visible and the user can select it in the picker.
-            if (Build.VERSION.SDK_INT >= 34 && !svc.hasMediaProjection) {
-                MediaProjectionConsentActivity.launch(this) { granted ->
-                    if (granted) toggleLiveDirect(true)
-                }
-                return
-            }
             MainActivity.isLiveModeActive = true
             // Dismiss any definition popup when entering live mode.
             val hadPopup = dragLookupController?.isPopupShowing == true

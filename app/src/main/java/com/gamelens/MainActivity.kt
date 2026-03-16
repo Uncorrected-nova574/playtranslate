@@ -101,12 +101,16 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
 
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) { runOnUiThread {
-            checkOnboardingState()
-            PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
+            if (!isFinishing) {
+                checkOnboardingState()
+                PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
+            }
         } }
         override fun onDisplayRemoved(displayId: Int) { runOnUiThread {
-            checkOnboardingState()
-            PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
+            if (!isFinishing) {
+                checkOnboardingState()
+                PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
+            }
         } }
         override fun onDisplayChanged(displayId: Int) {}
     }
@@ -481,19 +485,24 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
 
     /** Creates and shows a SettingsBottomSheet with all callbacks wired. */
     private fun showSettingsSheet(hideDismiss: Boolean) {
-        SettingsBottomSheet.newInstance(hideDismiss = hideDismiss).also { sheet ->
-            sheet.onDisplayChanged = {
+        val sheet = SettingsBottomSheet.newInstance(hideDismiss = hideDismiss).apply {
+            onDisplayChanged = {
                 captureService?.resetConfiguration()
                 configureService()
                 PlayTranslateAccessibilityService.instance?.ensureFloatingIcon()
             }
-            sheet.onHideLiveModeChanged = {
+            onHideLiveModeChanged = {
                 applyLiveModeVisibilitySetting()
             }
-            sheet.onScreenModeChanged = {
+            onScreenModeChanged = {
                 checkOnboardingState()
             }
-        }.show(supportFragmentManager, SettingsBottomSheet.TAG)
+        }
+        // Use commitAllowingStateLoss to avoid crashing when called
+        // from display listeners while the Activity is in a saved state.
+        val ft = supportFragmentManager.beginTransaction()
+        ft.add(sheet, SettingsBottomSheet.TAG)
+        ft.commitAllowingStateLoss()
     }
 
     /** True when the user has a working capture method set up (accessibility or screen recording). */
@@ -617,16 +626,6 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
 
     private fun withAccessibility(action: () -> Unit) {
         if (PlayTranslateAccessibilityService.isEnabled) {
-            // On API 34+, also request MediaProjection for live mode if
-            // not already granted — it enables flicker-free overlay capture.
-            if (Build.VERSION.SDK_INT >= 34
-                && captureService?.hasMediaProjection != true) {
-                val pendingAction = action
-                MediaProjectionConsentActivity.launch(this) { granted ->
-                    if (granted) { ensureConfigured(); pendingAction() }
-                }
-                return
-            }
             ensureConfigured()
             action()
             return
