@@ -542,13 +542,16 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
                 editTranslationJob = null
                 // Clear dragged-region override after capture completes and
                 // restore the default region for future captures.
-                if (!isLiveMode) {
+                // Use the static isLiveModeActive (not the instance isLiveMode)
+                // so this works even when live mode was started from the floating
+                // icon via toggleLiveDirect, which doesn't set isLiveMode.
+                if (!isLiveModeActive) {
                     if (overrideRegion != null) clearOverride()
                     configureService()
                 }
                 liveProgressRing.visibility = View.GONE
                 resultFragment?.displayResult(result)
-                if (!isLiveMode) {
+                if (!isLiveModeActive) {
                     btnClear.visibility = View.VISIBLE
                     btnMainAddToAnki.visibility = View.VISIBLE
                 }
@@ -564,7 +567,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
             runOnUiThread { liveProgressRing.visibility = View.VISIBLE }
         }
         svc.onLiveNoText = {
-            runOnUiThread { if (isLiveMode) resultFragment?.showStatus(searchingStatusText()) }
+            runOnUiThread { if (isLiveModeActive) resultFragment?.showStatus(searchingStatusText()) }
         }
 
         ensureConfigured()
