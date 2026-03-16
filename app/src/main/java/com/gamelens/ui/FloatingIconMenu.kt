@@ -39,8 +39,13 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
     var onHideTemporary: (() -> Unit)? = null
     var onDismiss: (() -> Unit)? = null
     var onRegionSelected: ((top: Float, bottom: Float, left: Float, right: Float) -> Unit)? = null
+    var onClearRegion: (() -> Unit)? = null
     var onToggleLive: (() -> Unit)? = null
     var isSingleScreen: Boolean = false
+
+    /** Current active capture region as fractional coordinates (top, bottom, left, right).
+     *  null or (0,1,0,1) means full screen — no region highlight shown. */
+    var activeRegion: FloatArray? = null
     var isLiveMode: Boolean = false
         set(value) {
             field = value
@@ -59,6 +64,15 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
         strokeWidth = 3f * dp
         isAntiAlias = true
     }
+
+    private val regionStrokePaint = Paint().apply {
+        style = Paint.Style.STROKE
+        color = Color.argb(200, 100, 180, 255)
+        strokeWidth = 2f * dp
+        isAntiAlias = true
+    }
+
+    private var clearRegionButton: View? = null
 
     private val menuCard: LinearLayout
     private val instructionText: TextView
@@ -222,13 +236,32 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
     override fun onDraw(canvas: Canvas) {
         val sel = selectionRect
         if (sel != null && isDragging) {
+            // User is dragging a new region selection
             val sc = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
             canvas.drawRect(sel, clearPaint)
             canvas.restoreToCount(sc)
             canvas.drawRect(sel, selectionStrokePaint)
         } else {
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
+            val region = activeRegion
+            val isFullScreen = region == null ||
+                (region[0] <= 0f && region[1] >= 1f && region[2] <= 0f && region[3] >= 1f)
+            if (!isFullScreen && region != null) {
+                // Show the active capture region as a clear window
+                val w = width.toFloat()
+                val h = height.toFloat()
+                val regionRect = RectF(
+                    region[2] * w, region[0] * h,
+                    region[3] * w, region[1] * h
+                )
+                val sc = canvas.saveLayer(0f, 0f, w, h, null)
+                canvas.drawRect(0f, 0f, w, h, dimPaint)
+                canvas.drawRect(regionRect, clearPaint)
+                canvas.restoreToCount(sc)
+                canvas.drawRect(regionRect, regionStrokePaint)
+            } else {
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
+            }
         }
     }
 
@@ -506,6 +539,69 @@ class FloatingIconMenu(context: Context) : FrameLayout(context) {
                 .setDuration(150)
                 .setInterpolator(DecelerateInterpolator())
                 .start()
+
+            // Show red X button to clear region (if a custom region is active)
+            showClearRegionButton(iconEdge, screenW, screenH)
         }
+    }
+
+    private fun showClearRegionButton(iconEdge: FloatingOverlayIcon.Edge, screenW: Int, screenH: Int) {
+        clearRegionButton?.let { removeView(it) }
+        clearRegionButton = null
+
+        val region = activeRegion ?: return
+        val isFullScreen = region[0] <= 0f && region[1] >= 1f && region[2] <= 0f && region[3] >= 1f
+        if (isFullScreen) return
+
+        val btnSize = (36 * dp).toInt()
+        val regionRect = RectF(
+            region[2] * screenW, region[0] * screenH,
+            region[3] * screenW, region[1] * screenH
+        )
+
+        // Position on the opposite side from the menu
+        val btnX = if (iconEdge == FloatingOverlayIcon.Edge.LEFT) {
+            (regionRect.right - btnSize - 8 * dp).toInt()
+        } else {
+            (regionRect.left + 8 * dp).toInt()
+        }
+        val btnY = (regionRect.top + 8 * dp).toInt()
+
+        val btn = View(context).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(Color.argb(220, 200, 40, 40))
+            }
+            setOnClickListener {
+                onClearRegion?.invoke()
+                onDismiss?.invoke()
+            }
+        }
+
+        // Draw X using a simple TextView overlay
+        val xLabel = TextView(context).apply {
+            text = "✕"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            gravity = Gravity.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        val container = FrameLayout(context).apply {
+            addView(btn, FrameLayout.LayoutParams(btnSize, btnSize))
+            addView(xLabel, FrameLayout.LayoutParams(btnSize, btnSize))
+            setOnClickListener {
+                onClearRegion?.invoke()
+                onDismiss?.invoke()
+            }
+        }
+
+        val lp = LayoutParams(btnSize, btnSize).apply {
+            gravity = Gravity.TOP or Gravity.START
+            leftMargin = btnX
+            topMargin = btnY
+        }
+        addView(container, lp)
+        clearRegionButton = container
     }
 }

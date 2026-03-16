@@ -111,6 +111,22 @@ class TranslationResultActivity : AppCompatActivity(), TranslationResultFragment
     }
 
     override fun onDestroy() {
+        // Restore the user's configured region so the dragged region
+        // doesn't persist for future captures.
+        val prefs = Prefs(this)
+        val entry = prefs.getRegionList().getOrElse(prefs.captureRegionIndex) {
+            Prefs.DEFAULT_REGION_LIST[0]
+        }
+        captureService?.configure(
+            displayId             = prefs.captureDisplayId,
+            sourceLang            = prefs.sourceLang,
+            targetLang            = prefs.targetLang,
+            captureTopFraction    = entry.top,
+            captureBottomFraction = entry.bottom,
+            captureLeftFraction   = entry.left,
+            captureRightFraction  = entry.right,
+            regionLabel           = entry.label
+        )
         captureService?.onResult = null
         captureService?.onError = null
         captureService?.onStatusUpdate = null

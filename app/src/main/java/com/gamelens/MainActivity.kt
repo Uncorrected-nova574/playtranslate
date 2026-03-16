@@ -540,8 +540,12 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
             runOnUiThread {
                 editTranslationJob?.cancel()
                 editTranslationJob = null
-                // Restore saved region config after one-shot, but only if no override is active
-                if (!isLiveMode && overrideRegion == null) configureService()
+                // Clear dragged-region override after capture completes and
+                // restore the default region for future captures.
+                if (!isLiveMode) {
+                    if (overrideRegion != null) clearOverride()
+                    configureService()
+                }
                 liveProgressRing.visibility = View.GONE
                 resultFragment?.displayResult(result)
                 if (!isLiveMode) {
@@ -615,6 +619,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
 
         if (isLiveMode) pauseLiveMode()
 
+        // Use the dragged region for this capture only — don't persist it.
         overrideRegionLabel = DRAGGED_REGION_LABEL
         overrideRegion = floatArrayOf(topFrac, bottomFrac, leftFrac, rightFrac)
         applyOverrideIfActive()

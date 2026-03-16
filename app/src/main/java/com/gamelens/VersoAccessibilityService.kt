@@ -632,9 +632,48 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        menu.activeRegion = CaptureService.instance?.activeRegion
         menu.onRegionSelected = { top, bottom, left, right ->
             dismissFloatingMenu()
-            handleRegionSelection(display.displayId, top, bottom, left, right)
+            if (MainActivity.isLiveModeActive) {
+                // In live mode: update the capture region and continue live
+                CaptureService.instance?.let { svc ->
+                    val prefs = Prefs(this)
+                    svc.configure(
+                        displayId             = prefs.captureDisplayId,
+                        sourceLang            = prefs.sourceLang,
+                        targetLang            = prefs.targetLang,
+                        captureTopFraction    = top,
+                        captureBottomFraction = bottom,
+                        captureLeftFraction   = left,
+                        captureRightFraction  = right,
+                        regionLabel           = "Drawn Region"
+                    )
+                    hideTranslationOverlay()
+                    svc.refreshLiveOverlay()
+                }
+            } else {
+                handleRegionSelection(display.displayId, top, bottom, left, right)
+            }
+        }
+        menu.onClearRegion = {
+            // Reset to full screen
+            val prefs = Prefs(this)
+            prefs.captureRegionIndex = 0  // full screen preset
+            val svc = CaptureService.instance
+            if (svc != null && svc.isConfigured) {
+                val entry = Prefs.DEFAULT_REGION_LIST[0]
+                svc.configure(
+                    displayId             = prefs.captureDisplayId,
+                    sourceLang            = prefs.sourceLang,
+                    targetLang            = prefs.targetLang,
+                    captureTopFraction    = entry.top,
+                    captureBottomFraction = entry.bottom,
+                    captureLeftFraction   = entry.left,
+                    captureRightFraction  = entry.right,
+                    regionLabel           = entry.label
+                )
+            }
         }
 
         val params = WindowManager.LayoutParams(

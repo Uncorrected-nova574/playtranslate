@@ -84,6 +84,10 @@ class CaptureService : Service() {
     private var captureBottomFraction: Float = 1f
     private var captureLeftFraction: Float   = 0f
     private var captureRightFraction: Float  = 1f
+
+    /** Active capture region as [top, bottom, left, right] fractions. */
+    val activeRegion: FloatArray
+        get() = floatArrayOf(captureTopFraction, captureBottomFraction, captureLeftFraction, captureRightFraction)
     private var captureRegionLabel: String   = ""
 
     // ── Callbacks to Activity ─────────────────────────────────────────────
