@@ -330,8 +330,10 @@ class FloatingOverlayIcon(context: Context) : View(context) {
                 exitDragMode()
                 removeCallbacks(holdRunnable)
 
-                if (holdFired) {
-                    // Was holding — fire hold end, restore position, don't treat as tap
+                // Check both the flag AND elapsed time — the holdRunnable may
+                // not have executed yet if the main thread was busy.
+                val heldLongEnough = event.eventTime - event.downTime >= holdDelayMs
+                if (holdFired || (heldLongEnough && totalMovement < tapThresholdPx)) {
                     holdFired = false
                     val p = params
                     if (p != null) {
