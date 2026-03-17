@@ -410,7 +410,6 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         btnLivePlay.visibility = View.GONE
         btnLivePause.visibility = View.VISIBLE
         btnClear.visibility = View.GONE
-        btnMainAddToAnki.visibility = View.GONE
         updateRegionButton()
         resultFragment?.showStatus(searchingStatusText())
         ensureConfigured()
@@ -553,9 +552,9 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
                 }
                 liveProgressRing.visibility = View.GONE
                 resultFragment?.displayResult(result)
+                btnMainAddToAnki.visibility = View.VISIBLE
                 if (!isLiveModeActive) {
                     btnClear.visibility = View.VISIBLE
-                    btnMainAddToAnki.visibility = View.VISIBLE
                 }
             }
         }
