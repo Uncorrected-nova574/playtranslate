@@ -1,7 +1,6 @@
 package com.gamelens
 
 import android.Manifest
-import android.media.projection.MediaProjectionManager
 import com.gamelens.themeColor
 import android.content.ComponentName
 import android.content.Context
@@ -158,22 +157,6 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
                     putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                 }
             )
-        }
-        checkOnboardingState()
-    }
-
-    private var pendingAfterMpGrant: (() -> Unit)? = null
-
-    private val mediaProjectionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK && result.data != null) {
-            captureService?.setMediaProjection(result.resultCode, result.data ?: return@registerForActivityResult)
-            prefs.captureMethod = "media_projection"
-            pendingAfterMpGrant?.invoke()
-            pendingAfterMpGrant = null
-        } else {
-            pendingAfterMpGrant = null
         }
         checkOnboardingState()
     }
@@ -507,9 +490,9 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         ft.commitAllowingStateLoss()
     }
 
-    /** True when the user has a working capture method set up (accessibility or screen recording). */
+    /** True when the user has the accessibility service enabled. */
     private val isCaptureReady: Boolean
-        get() = PlayTranslateAccessibilityService.isEnabled || prefs.captureMethod == "media_projection"
+        get() = PlayTranslateAccessibilityService.isEnabled
 
     /** Dims the action button when no capture method is available. */
     private fun updateActionButtonState() {
@@ -633,17 +616,6 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
             action()
             return
         }
-        if (prefs.captureMethod == "media_projection") {
-            if (captureService?.hasMediaProjection == true) {
-                ensureConfigured()
-                action()
-            } else {
-                pendingAfterMpGrant = { ensureConfigured(); action() }
-                val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                mediaProjectionLauncher.launch(mgr.createScreenCaptureIntent())
-            }
-            return
-        }
         showAccessibilityDialog()
     }
 
@@ -743,8 +715,7 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
             existingSheet.dismissAllowingStateLoss()
         }
 
-        val captureReady = a11yEnabled || prefs.captureMethod == "media_projection"
-        if (captureReady) {
+        if (a11yEnabled) {
             onboardingContainer.visibility = View.GONE
             btnSettings.visibility = View.VISIBLE
             return
@@ -767,13 +738,32 @@ class MainActivity : AppCompatActivity(), TranslationResultFragment.TranslationR
         pageA11y.findViewById<View>(R.id.btnOpenA11y).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-        pageA11y.findViewById<View>(R.id.btnUseScreenRecord).setOnClickListener {
-            val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjectionLauncher.launch(mgr.createScreenCaptureIntent())
-        }
         pageA11ySingle.findViewById<View>(R.id.btnOpenA11ySingle).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        // Highlight "PlayTranslate" in the hint text with the theme accent color
+        val accentColor = themeColor(R.attr.colorTextTranslation)
+        colorizeAppName(pageA11y.findViewById(R.id.tvA11yHintDual), accentColor)
+        colorizeAppName(pageA11ySingle.findViewById(R.id.tvA11yHintSingle), accentColor)
+    }
+
+    private fun colorizeAppName(tv: TextView, color: Int) {
+        val text = tv.text.toString()
+        val appName = getString(R.string.app_name)
+        val start = text.indexOf(appName)
+        if (start < 0) return
+        val spannable = android.text.SpannableString(text)
+        spannable.setSpan(
+            android.text.style.ForegroundColorSpan(color),
+            start, start + appName.length,
+            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        spannable.setSpan(
+            StyleSpan(Typeface.BOLD),
+            start, start + appName.length,
+            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        tv.text = spannable
     }
 
     // ── Display detection ─────────────────────────────────────────────────

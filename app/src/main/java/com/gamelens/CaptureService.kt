@@ -26,21 +26,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.coroutines.resume
 import android.hardware.display.DisplayManager
-import android.media.ImageReader
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import com.gamelens.ui.TranslationOverlayView
-import android.graphics.PixelFormat
-import android.os.Handler
-import android.os.Looper
-import android.util.DisplayMetrics
 
 private const val TAG = "CaptureService"
 private const val NOTIF_ID = 1001
@@ -100,18 +90,6 @@ class CaptureService : Service() {
     /** Fired during live mode when an OCR cycle finds no source-language text. */
     var onLiveNoText: (() -> Unit)? = null
 
-    // ── MediaProjection capture (alternative to AccessibilityService) ─────────
-
-    private var mediaProjection: MediaProjection? = null
-
-    val hasMediaProjection: Boolean get() = mediaProjection != null
-
-    fun setMediaProjection(resultCode: Int, data: Intent) {
-        mediaProjection?.stop()
-        val mgr = getSystemService(MediaProjectionManager::class.java)
-        mediaProjection = mgr.getMediaProjection(resultCode, data)
-    }
-
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     override fun onCreate() {
@@ -138,7 +116,6 @@ class CaptureService : Service() {
         translationManager?.close()
         deeplTranslator?.close()
         lingvaTranslator?.close()
-        mediaProjection?.stop()
         super.onDestroy()
     }
 
@@ -386,7 +363,7 @@ class CaptureService : Service() {
     // sampled pixels changed, the game is moving and overlays are stale.
 
     private var sceneCheckJob: Job? = null
-    private val SCENE_CHANGE_THRESHOLD = 0.40f  // 40% of sampled pixels must change
+    private val SCENE_CHANGE_THRESHOLD = 0.30f  // 30% of sampled pixels must change
     private val PIXEL_DIFF_THRESHOLD = 30       // per-channel RGB difference
 
     /**
@@ -430,11 +407,7 @@ class CaptureService : Service() {
 
                 val preCapture = System.currentTimeMillis()
                 val bitmap = mgr.requestRaw(gameDisplayId)
-                if (bitmap == null) {
-                    Log.w(TAG, "SceneDetect: requestRaw returned null after ${System.currentTimeMillis() - preCapture}ms")
-                    continue
-                }
-                Log.d(TAG, "SceneDetect: requestRaw took ${System.currentTimeMillis() - preCapture}ms")
+                if (bitmap == null) continue
 
                 val currentPixels = IntArray(positions.size) { i ->
                     val (x, y) = positions[i]
@@ -445,10 +418,8 @@ class CaptureService : Service() {
                     bitmap.recycle()
                     // Phase 1: compare against reference to detect movement start
                     val pct = pixelDiffPercent(refPixels, currentPixels)
-                    Log.d(TAG, "SceneDetect: Phase1 diff=${(pct * 100).toInt()}% threshold=${(SCENE_CHANGE_THRESHOLD * 100).toInt()}%")
                     if (pct >= SCENE_CHANGE_THRESHOLD) {
                         sceneMoving = true
-                        Log.d(TAG, "SceneDetect: MOVEMENT DETECTED at ${System.currentTimeMillis()}")
                         liveCaptureJob?.cancel()
                         lastLiveOcrText = null
                         cachedOverlayBoxes = null
@@ -459,21 +430,17 @@ class CaptureService : Service() {
                     val prev = prevFramePixels
                     if (prev != null) {
                         val pct = pixelDiffPercent(prev, currentPixels)
-                        Log.d(TAG, "SceneDetect: Phase2 diff=${(pct * 100).toInt()}% stable=<5%")
                         if (pct < 0.05f) {
                             // Scene stabilized — reuse this screenshot directly
                             // for OCR instead of taking another (saves ~1s rate limit).
                             // The bitmap is already clean: Phase 1 hid the overlay,
                             // and FLAG_SECURE excludes the floating icon.
-                            Log.d(TAG, "SceneDetect: STABILIZED — reusing bitmap for OCR at ${System.currentTimeMillis()}")
                             liveCaptureJob?.cancel()
                             liveCaptureJob = serviceScope.launch {
                                 runLiveCaptureCycle(preCaptured = bitmap)
                             }
                             return@launch
                         }
-                    } else {
-                        Log.d(TAG, "SceneDetect: Phase2 first frame (no prev yet)")
                     }
                     bitmap.recycle()
                 }
@@ -555,57 +522,11 @@ class CaptureService : Service() {
     }
 
     /**
-     * Captures a clean screenshot via [ScreenshotManager], falling back to
-     * MediaProjection if the AccessibilityService isn't available.
+     * Captures a clean screenshot via [ScreenshotManager].
      */
     private suspend fun captureScreen(displayId: Int): Bitmap? {
         val mgr = PlayTranslateAccessibilityService.instance?.screenshotManager
-        return mgr?.requestClean(displayId) ?: captureScreenViaMediaProjection(displayId)
-    }
-
-    private suspend fun captureScreenViaMediaProjection(displayId: Int): Bitmap? {
-        val mp = mediaProjection ?: return null
-        val dm = getSystemService(DisplayManager::class.java)
-        val display = dm.getDisplay(displayId) ?: return null
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        display.getRealMetrics(metrics)
-        val w = metrics.widthPixels
-        val h = metrics.heightPixels
-        val dpi = metrics.densityDpi
-        return kotlinx.coroutines.withTimeoutOrNull(3000L) {
-            suspendCancellableCoroutine { cont ->
-                val imageReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-                val vd = try {
-                    mp.createVirtualDisplay(
-                        "PlayTranslateCapture", w, h, dpi,
-                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                        imageReader.surface, null, null
-                    )
-                } catch (e: Exception) {
-                    imageReader.close()
-                    cont.resume(null)
-                    return@suspendCancellableCoroutine
-                }
-                imageReader.setOnImageAvailableListener({ reader ->
-                    if (!cont.isActive) { vd.release(); reader.close(); return@setOnImageAvailableListener }
-                    val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-                    val plane = image.planes[0]
-                    val rowPadding = plane.rowStride - plane.pixelStride * w
-                    val bmpW = w + rowPadding / plane.pixelStride
-                    val bmp = Bitmap.createBitmap(bmpW, h, Bitmap.Config.ARGB_8888)
-                    bmp.copyPixelsFromBuffer(plane.buffer)
-                    image.close()
-                    vd.release()
-                    reader.close()
-                    val result = if (rowPadding == 0) bmp
-                        else Bitmap.createBitmap(bmp, 0, 0, w, h).also { bmp.recycle() }
-                    if (!cont.isActive) { result.recycle(); return@setOnImageAvailableListener }
-                    cont.resume(result)
-                }, Handler(Looper.getMainLooper()))
-                cont.invokeOnCancellation { vd.release(); imageReader.close() }
-            }
-        }
+        return mgr?.requestClean(displayId)
     }
 
     /**
@@ -617,17 +538,9 @@ class CaptureService : Service() {
         val mgr = PlayTranslateAccessibilityService.instance?.screenshotManager
 
         val raw: Bitmap = if (preCaptured != null) {
-            Log.d(TAG, "LiveCapture: using pre-captured bitmap (${preCaptured.width}x${preCaptured.height})")
             preCaptured
         } else {
-            val captureStart = System.currentTimeMillis()
-            Log.d(TAG, "LiveCapture: starting captureScreen at $captureStart")
-            val bmp = captureScreen(gameDisplayId) ?: run {
-                Log.w(TAG, "LiveCapture: captureScreen returned null after ${System.currentTimeMillis() - captureStart}ms")
-                return
-            }
-            Log.d(TAG, "LiveCapture: captureScreen took ${System.currentTimeMillis() - captureStart}ms")
-            bmp
+            captureScreen(gameDisplayId) ?: return
         }
 
         try {

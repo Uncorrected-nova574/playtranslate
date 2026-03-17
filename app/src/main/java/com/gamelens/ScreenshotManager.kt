@@ -118,7 +118,6 @@ class ScreenshotManager(private val a11y: PlayTranslateAccessibilityService) {
         val elapsed = System.currentTimeMillis() - lastCaptureTimeMs
         val waitMs = MIN_SCREENSHOT_INTERVAL_MS - elapsed
         if (waitMs > 0) {
-            Log.d(TAG, "awaitScreenshotInterval: waiting ${waitMs}ms (elapsed=${elapsed}ms since last capture)")
             delay(waitMs)
         }
     }
