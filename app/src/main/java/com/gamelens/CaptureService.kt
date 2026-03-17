@@ -399,25 +399,28 @@ class CaptureService : Service() {
             }
             refBitmap.recycle()
 
-            // Poll loop
+            // Poll loop — reuse pixel arrays to avoid GC pressure
             var sceneMoving = false
-            var prevFramePixels: IntArray? = null
+            var hasPrev = false
+            val pixelsA = IntArray(positions.size)
+            val pixelsB = IntArray(positions.size)
+            var current = pixelsA
+            var prev = pixelsB
 
             while (liveActive) {
 
-                val preCapture = System.currentTimeMillis()
                 val bitmap = mgr.requestRaw(gameDisplayId)
                 if (bitmap == null) continue
 
-                val currentPixels = IntArray(positions.size) { i ->
+                for (i in positions.indices) {
                     val (x, y) = positions[i]
-                    if (x < bitmap.width && y < bitmap.height) bitmap.getPixel(x, y) else 0
+                    current[i] = if (x < bitmap.width && y < bitmap.height) bitmap.getPixel(x, y) else 0
                 }
 
                 if (!sceneMoving) {
                     bitmap.recycle()
                     // Phase 1: compare against reference to detect movement start
-                    val pct = pixelDiffPercent(refPixels, currentPixels)
+                    val pct = pixelDiffPercent(refPixels, current)
                     if (pct >= SCENE_CHANGE_THRESHOLD) {
                         sceneMoving = true
                         liveCaptureJob?.cancel()
@@ -427,9 +430,8 @@ class CaptureService : Service() {
                     }
                 } else {
                     // Phase 2: compare consecutive frames to detect stabilization
-                    val prev = prevFramePixels
-                    if (prev != null) {
-                        val pct = pixelDiffPercent(prev, currentPixels)
+                    if (hasPrev) {
+                        val pct = pixelDiffPercent(prev, current)
                         if (pct < 0.05f) {
                             // Scene stabilized — reuse this screenshot directly
                             // for OCR instead of taking another (saves ~1s rate limit).
@@ -444,7 +446,9 @@ class CaptureService : Service() {
                     }
                     bitmap.recycle()
                 }
-                prevFramePixels = currentPixels
+                // Swap arrays so current becomes prev for next iteration
+                hasPrev = true
+                val tmp = prev; prev = current; current = tmp
             }
         }
     }
@@ -537,11 +541,8 @@ class CaptureService : Service() {
         if (!isConfigured) { preCaptured?.recycle(); return }
         val mgr = PlayTranslateAccessibilityService.instance?.screenshotManager
 
-        val raw: Bitmap = if (preCaptured != null) {
-            preCaptured
-        } else {
-            captureScreen(gameDisplayId) ?: return
-        }
+        val raw: Bitmap = preCaptured ?: captureScreen(gameDisplayId) ?: return
+        var colorRef: Bitmap? = null
 
         try {
             val statusBarHeight = getStatusBarHeightForDisplay(gameDisplayId)
@@ -556,7 +557,7 @@ class CaptureService : Service() {
 
             // Create color reference for adaptive overlay colors
             val colorScale = 4
-            val colorRef = Bitmap.createScaledBitmap(raw, raw.width / colorScale, raw.height / colorScale, false)
+            colorRef = Bitmap.createScaledBitmap(raw, raw.width / colorScale, raw.height / colorScale, false)
 
             // Flash region indicator AFTER screenshot is captured
             if (liveShowRegionFlash) {
@@ -569,8 +570,6 @@ class CaptureService : Service() {
             if (ocrBitmap !== raw) ocrBitmap.recycle()
 
             if (ocrResult == null) {
-                colorRef.recycle()
-                raw.recycle()
                 lastLiveOcrText = null
                 cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
@@ -582,8 +581,6 @@ class CaptureService : Service() {
             val dedupKey = newText.filter { c -> OcrManager.isSourceLangChar(c, sourceLang) }
 
             if (dedupKey.isEmpty()) {
-                colorRef.recycle()
-                raw.recycle()
                 lastLiveOcrText = null
                 cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
@@ -593,8 +590,6 @@ class CaptureService : Service() {
 
             // Dedup: if text hasn't changed significantly, re-show cached overlay
             if (!isSignificantChange(lastLiveOcrText ?: "", dedupKey)) {
-                colorRef.recycle()
-                raw.recycle()
                 val boxes = cachedOverlayBoxes
                 if (boxes != null) {
                     showLiveOverlay(boxes, cachedOverlayCropLeft, cachedOverlayCropTop,
@@ -608,7 +603,6 @@ class CaptureService : Service() {
             val screenshotPath = mgr?.saveToCache(raw)
             val screenshotW = raw.width
             val screenshotH = raw.height
-            raw.recycle()
 
             // Translate inline (cancellation-safe — if liveCaptureJob is cancelled,
             // this coroutine is cancelled too, no separate generation tracking needed)
@@ -633,13 +627,14 @@ class CaptureService : Service() {
             // Show translation overlay on the game screen
             if (liveGroupBounds.size == perGroup.size) {
                 val buffer = 10 / colorScale
+                val cRef = colorRef!!
                 val overlayBoxes = perGroup.zip(liveGroupBounds).map { (tr, bounds) ->
                     val sl = (bounds.left + left) / colorScale
                     val st = (bounds.top + top) / colorScale
                     val sr = (bounds.right + left) / colorScale
                     val sb = (bounds.bottom + top) / colorScale
 
-                    val bgColor = averageColor(colorRef,
+                    val bgColor = averageColor(cRef,
                         sl - buffer, st - buffer, sr + buffer, sb + buffer,
                         excludeInner = android.graphics.Rect(sl, st, sr, sb))
 
@@ -648,22 +643,21 @@ class CaptureService : Service() {
 
                     TranslationOverlayView.TextBox(tr.first, bounds, bgColor, textColor)
                 }
-                colorRef.recycle()
                 cachedOverlayBoxes = overlayBoxes
                 cachedOverlayCropLeft = left
                 cachedOverlayCropTop = top
                 cachedOverlayScreenW = screenshotW
                 cachedOverlayScreenH = screenshotH
                 showLiveOverlay(overlayBoxes, left, top, screenshotW, screenshotH)
-            } else {
-                colorRef.recycle()
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
-            raw.recycle()
             throw e
         } catch (e: Exception) {
-            raw.recycle()
             Log.w(TAG, "Live capture cycle failed: ${e.message}")
+        } finally {
+            // Guarantee cleanup on all paths (normal, cancellation, exception)
+            colorRef?.recycle()
+            if (!raw.isRecycled) raw.recycle()
         }
     }
 

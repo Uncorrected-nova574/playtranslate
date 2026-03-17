@@ -38,7 +38,7 @@ class DragLookupController(
         Dispatchers.Main + SupervisorJob() +
             CoroutineExceptionHandler { _, e -> Log.e(TAG, "Uncaught", e) }
     )
-    private val ocrManager = OcrManager()
+    private val ocrManager = com.gamelens.OcrManager()
 
     /** Cached OCR lines from the initial screenshot. */
     private var ocrLines: List<OcrManager.OcrLine>? = null
