@@ -1,8 +1,10 @@
 package com.playtranslate
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.graphics.Point
@@ -87,19 +89,37 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
     var screenshotManager: ScreenshotManager? = null
         private set
 
+    /** Suspends live mode when screen off, restarts on screen on. */
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val svc = CaptureService.instance ?: return
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    if (svc.isLive) svc.stopLive()
+                    hideTranslationOverlay()
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    if (MainActivity.isLiveModeActive) svc.startLive()
+                }
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         instance = this
         screenshotManager = ScreenshotManager(this)
-        // Ensure we can query the window list (needed for nav bar detection
-        // during joystick polling). Setting this at runtime avoids needing
-        // the user to re-toggle the service after an app update.
         serviceInfo = serviceInfo.apply {
             flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
+        registerReceiver(screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        })
         ensureFloatingIcon()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         stopInputMonitoring()
         stopDebugOcrLoop()
         hideTranslationOverlay()

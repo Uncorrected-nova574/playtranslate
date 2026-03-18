@@ -355,5 +355,6 @@ class DictionaryManager private constructor(private val context: Context) {
             instance ?: synchronized(this) {
                 instance ?: DictionaryManager(context.applicationContext).also { instance = it }
             }
+
     }
 }

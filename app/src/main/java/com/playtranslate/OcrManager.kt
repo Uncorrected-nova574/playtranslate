@@ -285,11 +285,21 @@ class OcrManager private constructor() {
         val allLines = blocks.flatMap { it.lines }
             .filter { it.boundingBox != null }
             .filter { line ->
-                // Drop single-character lines in blocks with undetermined language
-                // (catches game UI arrows/symbols misdetected as Japanese characters).
+                // Drop single-character lines that aren't real words.
+                // Game UI arrows/symbols get misdetected as characters like "く".
+                // When blockLang is null/undetermined, check the dictionary —
+                // real words like "夜" have entries, symbols don't.
                 if (line.text.trim().length <= 1) {
                     val blockLang = blocks.firstOrNull { b -> line in b.lines }?.recognizedLanguage
-                    if (blockLang == "und") return@filter false
+                    if (blockLang == null || blockLang == "und") {
+                        // Single hiragana/katakana alone are almost never real
+                        // standalone words — they're UI arrows (く), indicators,
+                        // or misdetected fragments. Single kanji CAN be real
+                        // words (夜, 日, 月) so we keep those.
+                        val c = line.text.trim().firstOrNull() ?: return@filter false
+                        val isKanji = c in '\u4E00'..'\u9FFF' || c in '\u3400'..'\u4DBF'
+                        if (!isKanji) return@filter false
+                    }
                 }
                 true
             }
