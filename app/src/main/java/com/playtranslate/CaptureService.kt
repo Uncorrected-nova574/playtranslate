@@ -594,6 +594,9 @@ class CaptureService : Service() {
                 cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                 onLiveNoText?.invoke()
+                // Start scene detection so we recapture when the game changes
+                // (e.g. dialogue box opens). No overlay boxes to exclude.
+                if (liveActive) startSceneChangeDetection(emptyList())
                 return
             }
 
@@ -605,6 +608,7 @@ class CaptureService : Service() {
                 cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
                 onLiveNoText?.invoke()
+                if (liveActive) startSceneChangeDetection(emptyList())
                 return
             }
 
