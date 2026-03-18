@@ -660,6 +660,9 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        // Called before transitioning to Anki review — prevents popup.onDismiss
+        // from resuming live mode (the Anki view should handle that instead).
+        controller.onTransitioningToAnki = { liveWasPausedForPopup = false }
         icon.onDragStart = {
             // Pause live mode while dragging for definitions
             if (MainActivity.isLiveModeActive) {

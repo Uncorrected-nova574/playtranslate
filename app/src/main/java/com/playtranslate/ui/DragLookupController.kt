@@ -45,6 +45,8 @@ class DragLookupController(
     private var ocrJob: Job? = null
     private var lookupJob: Job? = null
     private var lastWord: String? = null
+    /** Called before transitioning to Anki review so live mode isn't resumed on popup dismiss. */
+    var onTransitioningToAnki: (() -> Unit)? = null
     /** Current dictionary entry shown in the popup — used for Anki export. */
     private var currentEntry: JishoWord? = null
     /** Path to the screenshot captured at drag start — used for Anki export. */
@@ -554,6 +556,7 @@ class DragLookupController(
         val hasCachedTranslation = sentenceOrig != null
             && cache.original?.contains(sentenceOrig) == true && cache.translation != null
 
+        onTransitioningToAnki?.invoke()
         popup.dismiss()
 
         if (!hasCachedTranslation && sentenceOrig != null) {
