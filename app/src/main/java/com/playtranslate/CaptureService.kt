@@ -760,6 +760,8 @@ class CaptureService : Service() {
      * @param cropTop  Top offset of the crop in full-screen coordinates.
      */
     private fun blackoutFloatingIcon(bitmap: Bitmap, cropLeft: Int = 0, cropTop: Int = 0): Bitmap {
+        // In compact mode the icon is a tiny sliver at the edge — skip blackout
+        if (Prefs(this).compactOverlayIcon) return bitmap
         val iconRect = PlayTranslateAccessibilityService.instance?.getFloatingIconRect()
             ?: return bitmap
         // Shift icon rect into the cropped bitmap's coordinate space

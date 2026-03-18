@@ -178,6 +178,20 @@ class SettingsBottomSheet : DialogFragment() {
             switchOverlayIcon.toggle()
         }
 
+        // ── Compact icon toggle ───────────────────────────────────────────
+        val switchCompactIcon = view.findViewById<Switch>(R.id.switchCompactIcon)
+        switchCompactIcon.isChecked = prefs.compactOverlayIcon
+        switchCompactIcon.setOnCheckedChangeListener { _, checked ->
+            prefs.compactOverlayIcon = checked
+            // Force recreate the icon to apply compact mode
+            val a11y = PlayTranslateAccessibilityService.instance
+            a11y?.hideFloatingIcon()
+            a11y?.ensureFloatingIcon()
+        }
+        view.findViewById<View>(R.id.rowCompactIcon).setOnClickListener {
+            switchCompactIcon.toggle()
+        }
+
         // ── DeepL key (auto-save on text change) ─────────────────────────
         etDeeplKey.setText(prefs.deeplApiKey)
         etDeeplKey.addTextChangedListener(object : TextWatcher {

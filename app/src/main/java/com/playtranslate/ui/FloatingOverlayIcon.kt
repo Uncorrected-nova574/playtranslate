@@ -41,9 +41,22 @@ class FloatingOverlayIcon(context: Context) : View(context) {
     private val circleHalf = circleSizePx / 2
     private val viewHalf = viewSizePx / 2
 
+    /** Compact mode: shows 1/3 circle with arrow instead of half circle with icon. */
+    var compactMode = false
+        set(value) { field = value; invalidate() }
+
     // ── Normal mode paints ──────────────────────────────────────────────
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#CC000000")
+        style = Paint.Style.FILL
+    }
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#66888888")
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f * resources.displayMetrics.density
+    }
+    private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
         style = Paint.Style.FILL
     }
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -204,8 +217,19 @@ class FloatingOverlayIcon(context: Context) : View(context) {
             canvas.drawCircle(center, center, r - ringPaint.strokeWidth / 2, ringPaint)
             // Small magnifying glass icon in center
             drawMagnifyingGlass(canvas, center, center, r * 0.4f)
+        } else if (compactMode) {
+            // Compact: circle pushed off-screen so only ~1/4 is visible
+            val compactOffset = r * 0.5f
+            val cx = if (currentEdge == Edge.LEFT) center - compactOffset else center + compactOffset
+            canvas.drawCircle(cx, center, r, circlePaint)
+            canvas.drawCircle(cx, center, r, borderPaint)
+            // Arrow in the visible slice, nudged toward the screen edge
+            val arrowNudge = r * 0.65f
+            val arrowCx = if (currentEdge == Edge.LEFT) cx + arrowNudge else cx - arrowNudge
+            drawEdgeArrow(canvas, arrowCx, center, r * 0.22f)
         } else {
             canvas.drawCircle(center, center, r, circlePaint)
+            canvas.drawCircle(center, center, r, borderPaint)
             // Draw icon bitmap centered on the visible half, nudged toward screen edge
             val nudge = 3 * resources.displayMetrics.density
             val cx = if (currentEdge == Edge.LEFT) {
@@ -220,7 +244,26 @@ class FloatingOverlayIcon(context: Context) : View(context) {
             val dst = RectF(cx - drawW / 2f, center - drawH / 2f, cx + drawW / 2f, center + drawH / 2f)
             canvas.drawBitmap(iconBitmap, null, dst, bitmapPaint)
         }
+    }
 
+    /** Draws a small arrow pointing toward the screen center (away from the edge). */
+    private fun drawEdgeArrow(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        val path = android.graphics.Path()
+        val hw = size * 0.5f  // half-width (horizontal)
+        val hh = size * 0.7f  // half-height (vertical)
+        if (currentEdge == Edge.LEFT) {
+            // Arrow pointing right (toward screen)
+            path.moveTo(cx + hw, cy)
+            path.lineTo(cx - hw * 0.3f, cy - hh)
+            path.lineTo(cx - hw * 0.3f, cy + hh)
+        } else {
+            // Arrow pointing left (toward screen)
+            path.moveTo(cx - hw, cy)
+            path.lineTo(cx + hw * 0.3f, cy - hh)
+            path.lineTo(cx + hw * 0.3f, cy + hh)
+        }
+        path.close()
+        canvas.drawPath(path, arrowPaint)
     }
 
     private fun drawMagnifyingGlass(canvas: Canvas, cx: Float, cy: Float, size: Float) {

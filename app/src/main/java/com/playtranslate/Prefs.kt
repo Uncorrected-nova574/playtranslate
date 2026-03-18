@@ -108,6 +108,11 @@ class Prefs(context: Context) {
         get() = sp.getFloat(KEY_OVERLAY_ICON_FRACTION, 0.5f).coerceIn(0f, 1f)
         set(v) = sp.edit().putFloat(KEY_OVERLAY_ICON_FRACTION, v).apply()
 
+    /** Compact mode: shows 1/3 of circle with arrow instead of full icon. */
+    var compactOverlayIcon: Boolean
+        get() = sp.getBoolean("compact_overlay_icon", false)
+        set(v) = sp.edit().putBoolean("compact_overlay_icon", v).apply()
+
     /** Debug-only: forces isSingleScreen() to return true regardless of actual display count. */
     var debugForceSingleScreen: Boolean
         get() = sp.getBoolean(KEY_DEBUG_FORCE_SINGLE_SCREEN, false)

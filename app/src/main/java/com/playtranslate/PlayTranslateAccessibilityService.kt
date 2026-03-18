@@ -609,6 +609,7 @@ class PlayTranslateAccessibilityService : AccessibilityService() {
             this.wm = wm
             screenW = screenSize.x
             screenH = screenSize.y
+            compactMode = prefs.compactOverlayIcon
         }
 
         val params = WindowManager.LayoutParams(
