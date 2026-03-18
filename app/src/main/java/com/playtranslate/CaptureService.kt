@@ -389,8 +389,13 @@ class CaptureService : Service() {
             // Brief delay to let the overlay render before taking reference
             delay(300L)
 
-            // Take reference frame (with overlays visible)
-            val refBitmap = mgr.requestRaw(gameDisplayId) ?: return@launch
+            // Take reference frame — keep trying until it succeeds or live
+            // mode stops. requestRaw handles rate limiting internally.
+            var refBitmap: Bitmap? = null
+            while (liveActive && refBitmap == null) {
+                refBitmap = mgr.requestRaw(gameDisplayId)
+            }
+            if (refBitmap == null) return@launch
 
             // Build sample positions: only inside the capture region, skipping overlay areas.
             // This prevents our own overlays outside the region (region indicator, etc.)
