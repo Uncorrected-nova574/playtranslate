@@ -228,7 +228,7 @@ class CaptureService : Service() {
 
             val ocrBitmap = blackoutFloatingIcon(bitmap, left, top)
             onStatusUpdate?.invoke(getString(R.string.status_ocr))
-            val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang)
+            val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang, screenshotWidth = raw.width)
             ocrBitmap.recycle()
 
             if (ocrResult == null) {
@@ -544,7 +544,7 @@ class CaptureService : Service() {
             else bitmap
 
             // OCR
-            val ocrResult = ocrManager.recognise(cropped, sourceLang, collectDebugBoxes = true)
+            val ocrResult = ocrManager.recognise(cropped, sourceLang, collectDebugBoxes = true, screenshotWidth = bitmap.width)
             if (cropped !== bitmap) cropped.recycle()
             if (ocrResult == null) return false
 
@@ -770,7 +770,7 @@ class CaptureService : Service() {
             }
 
             val ocrBitmap = blackoutFloatingIcon(bitmap, left, top)
-            val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang)
+            val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang, screenshotWidth = raw.width)
             if (ocrBitmap !== raw) ocrBitmap.recycle()
 
             if (ocrResult == null) {
@@ -1008,7 +1008,7 @@ class CaptureService : Service() {
 
             val ocrBitmap = blackoutFloatingIcon(bitmap, left, top)
             onStatusUpdate?.invoke(getString(R.string.status_ocr))
-            val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang)
+            val ocrResult = ocrManager.recognise(ocrBitmap, sourceLang, screenshotWidth = raw.width)
             ocrBitmap.recycle()
 
             if (ocrResult == null) {

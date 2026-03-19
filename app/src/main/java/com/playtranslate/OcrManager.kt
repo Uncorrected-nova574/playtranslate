@@ -66,7 +66,7 @@ class OcrManager private constructor() {
         val debugBoxes: OcrDebugBoxes? = null
     )
 
-    suspend fun recognise(bitmap: Bitmap, sourceLang: String = "ja", collectDebugBoxes: Boolean = false): OcrResult? {
+    suspend fun recognise(bitmap: Bitmap, sourceLang: String = "ja", collectDebugBoxes: Boolean = false, screenshotWidth: Int = 0): OcrResult? {
         val processed = prepareForOcr(bitmap)
         val scaleFactor = processed.width.toFloat() / bitmap.width
 
@@ -85,12 +85,16 @@ class OcrManager private constructor() {
         // 2. Group lines by proximity, size, and alignment (not blocks — blocks
         //    can contain spatially distant lines that shouldn't be merged).
         // 3. Discard groups that contain no character from the source language's script.
-        val groups = groupLinesByProximity(visionText.textBlocks, sourceLang)
+        val rawGroups = groupLinesByProximity(visionText.textBlocks, sourceLang)
             .filter { group ->
                 group.any { line -> line.text.any { c -> isSourceLangChar(c, sourceLang) } }
             }
 
-        if (groups.isEmpty()) return null
+        if (rawGroups.isEmpty()) return null
+
+        val groups = if (screenshotWidth > 0) {
+            splitMenuGroups(rawGroups, screenshotWidth * scaleFactor)
+        } else rawGroups
 
         val segments = mutableListOf<TextSegment>()
         val fullTextBuilder = StringBuilder()
@@ -361,6 +365,52 @@ class OcrManager private constructor() {
         }
 
         return groups
+    }
+
+    /**
+     * Splits groups that look like menus/lists into individual lines.
+     * A group is "menu-like" if it has 3+ lines, is narrow (< 1/3 screen),
+     * and its line edges don't cluster the way wrapped paragraph text would.
+     */
+    private fun splitMenuGroups(
+        groups: List<List<Text.Line>>,
+        screenWidthScaled: Float
+    ): List<List<Text.Line>> {
+        return groups.flatMap { group ->
+            if (group.size >= 3 && isMenuLike(group, screenWidthScaled)) {
+                group.map { listOf(it) }
+            } else {
+                listOf(group)
+            }
+        }
+    }
+
+    private fun isMenuLike(lines: List<Text.Line>, screenWidthScaled: Float): Boolean {
+        val boxes = lines.mapNotNull { it.boundingBox }
+        if (boxes.isEmpty()) return false
+
+        // Layer 1: group width < 1/3 of full screen width
+        val groupWidth = boxes.maxOf { it.right } - boxes.minOf { it.left }
+        if (groupWidth >= screenWidthScaled / 3f) return false
+
+        // Layer 2: a paragraph clusters on BOTH edges (left margin + right wrap).
+        // A menu clusters on at most one edge (alignment side) but scatters on
+        // the other (varying item lengths). Allow 1 outlier per edge (the final
+        // line of a paragraph is typically shorter).
+        val avgLineHeight = boxes.map { it.height() }.average().toFloat()
+        val minLeft = boxes.minOf { it.left }
+        val maxRight = boxes.maxOf { it.right }
+        val clusterThreshold = boxes.size - 1
+
+        val nearMinLeft = boxes.count { it.left - minLeft <= avgLineHeight }
+        val nearMaxRight = boxes.count { maxRight - it.right <= avgLineHeight }
+        val leftClustered = nearMinLeft >= clusterThreshold
+        val rightClustered = nearMaxRight >= clusterThreshold
+
+        // Both edges must cluster for it to be a paragraph — skip split
+        if (leftClustered && rightClustered) return false
+
+        return true
     }
 
     /** A line of OCR text with its bounding box in original (pre-scale) screen coordinates. */
