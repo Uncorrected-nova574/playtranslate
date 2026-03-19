@@ -1,5 +1,6 @@
 package com.playtranslate.ui
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
@@ -7,6 +8,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.widget.TextViewCompat
@@ -17,6 +19,9 @@ import androidx.core.widget.TextViewCompat
  * text group and is filled with a semi-transparent background so the
  * translated text is readable over game graphics. Font size auto-scales
  * via Android's built-in [TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration].
+ *
+ * When boxes have empty [TextBox.translatedText], a shimmer (pulsing alpha)
+ * animation runs until text is filled in via a subsequent [setBoxes] call.
  */
 class TranslationOverlayView(context: Context) : FrameLayout(context) {
 
@@ -46,6 +51,8 @@ class TranslationOverlayView(context: Context) : FrameLayout(context) {
     private var screenshotW = 1
     private var screenshotH = 1
 
+    private var shimmerAnimator: ValueAnimator? = null
+
     fun setBoxes(
         boxes: List<TextBox>,
         cropLeft: Int, cropTop: Int,
@@ -68,6 +75,12 @@ class TranslationOverlayView(context: Context) : FrameLayout(context) {
         post { rebuildChildren() }
     }
 
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        shimmerAnimator?.cancel()
+        shimmerAnimator = null
+    }
+
     private fun updateScales() {
         displayScaleX = width.toFloat() / screenshotW
         displayScaleY = height.toFloat() / screenshotH
@@ -82,6 +95,8 @@ class TranslationOverlayView(context: Context) : FrameLayout(context) {
     }
 
     private fun rebuildChildren() {
+        shimmerAnimator?.cancel()
+        shimmerAnimator = null
         removeAllViews()
         if (boxes.isEmpty()) return
 
@@ -116,6 +131,8 @@ class TranslationOverlayView(context: Context) : FrameLayout(context) {
             }
         }
 
+        val hasPlaceholders = boxes.any { it.translatedText.isEmpty() }
+
         // Create a TextView for each box
         boxes.zip(finalRects).forEach { (box, rect) ->
             val rectW = rect.width().toInt().coerceAtLeast(1)
@@ -128,9 +145,11 @@ class TranslationOverlayView(context: Context) : FrameLayout(context) {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(textMargin, textMargin, textMargin, textMargin)
                 setBackgroundColor(box.bgColor)
-                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                    this, minTextSizeSp, maxTextSizeSp, 1, TypedValue.COMPLEX_UNIT_SP
-                )
+                if (box.translatedText.isNotEmpty()) {
+                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                        this, minTextSizeSp, maxTextSizeSp, 1, TypedValue.COMPLEX_UNIT_SP
+                    )
+                }
             }
 
             val lp = LayoutParams(rectW, rectH).apply {
@@ -138,6 +157,24 @@ class TranslationOverlayView(context: Context) : FrameLayout(context) {
                 topMargin = rect.top.toInt()
             }
             addView(tv, lp)
+        }
+
+        if (hasPlaceholders) startShimmer()
+    }
+
+    private fun startShimmer() {
+        shimmerAnimator = ValueAnimator.ofFloat(0.4f, 0.8f).apply {
+            duration = 800
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { anim ->
+                val a = anim.animatedValue as Float
+                for (i in 0 until childCount) {
+                    getChildAt(i)?.alpha = a
+                }
+            }
+            start()
         }
     }
 }

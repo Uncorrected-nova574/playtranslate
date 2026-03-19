@@ -710,13 +710,16 @@ class CaptureService : Service() {
     private fun showLiveOverlay(
         boxes: List<TranslationOverlayView.TextBox>,
         cropLeft: Int, cropTop: Int,
-        screenshotW: Int, screenshotH: Int
+        screenshotW: Int, screenshotH: Int,
+        startSceneDetection: Boolean = true
     ) {
         if (holdActive) return
         val a11y = PlayTranslateAccessibilityService.instance ?: return
         val dm = getSystemService(DisplayManager::class.java)
         val display = dm.getDisplay(gameDisplayId) ?: return
         a11y.showTranslationOverlay(display, boxes, cropLeft, cropTop, screenshotW, screenshotH)
+
+        if (!startSceneDetection) return
 
         // Start scene-change detection. The coroutine captures its own
         // reference frame after a short delay.
@@ -827,12 +830,34 @@ class CaptureService : Service() {
             val screenshotW = raw.width
             val screenshotH = raw.height
 
-            // Translate inline (cancellation-safe — if liveCaptureJob is cancelled,
-            // this coroutine is cancelled too, no separate generation tracking needed)
-            onTranslationStarted?.invoke()
             val liveGroupTexts = ocrResult.groupTexts
             val liveGroupBounds = ocrResult.groupBounds
 
+            // Sample colors and show shimmer placeholders immediately
+            // so the user sees overlay positions while translations load.
+            val buffer = 10 / colorScale
+            val cRef = colorRef!!
+            val placeholderBoxes = liveGroupBounds.map { bounds ->
+                val sl = (bounds.left + left) / colorScale
+                val st = (bounds.top + top) / colorScale
+                val sr = (bounds.right + left) / colorScale
+                val sb = (bounds.bottom + top) / colorScale
+
+                val bgColor = averageColor(cRef,
+                    sl - buffer, st - buffer, sr + buffer, sb + buffer,
+                    excludeInner = android.graphics.Rect(sl, st, sr, sb))
+
+                val textColor = if (colorLuminance(bgColor) > 128)
+                    android.graphics.Color.BLACK else android.graphics.Color.WHITE
+
+                TranslationOverlayView.TextBox("", bounds, bgColor, textColor)
+            }
+            showLiveOverlay(placeholderBoxes, left, top, screenshotW, screenshotH,
+                startSceneDetection = false)
+
+            // Translate (cancellation-safe — if liveCaptureJob is cancelled,
+            // this coroutine is cancelled too)
+            onTranslationStarted?.invoke()
             val perGroup = translateGroupsSeparately(liveGroupTexts)
             val translated = perGroup.joinToString("\n\n") { it.first }
             val note = perGroup.mapNotNull { it.second }.firstOrNull()
@@ -847,24 +872,11 @@ class CaptureService : Service() {
                     note           = note
                 )
             )
-            // Show translation overlay on the game screen
+
+            // Update overlay with translated text
             if (liveGroupBounds.size == perGroup.size) {
-                val buffer = 10 / colorScale
-                val cRef = colorRef!!
-                val overlayBoxes = perGroup.zip(liveGroupBounds).map { (tr, bounds) ->
-                    val sl = (bounds.left + left) / colorScale
-                    val st = (bounds.top + top) / colorScale
-                    val sr = (bounds.right + left) / colorScale
-                    val sb = (bounds.bottom + top) / colorScale
-
-                    val bgColor = averageColor(cRef,
-                        sl - buffer, st - buffer, sr + buffer, sb + buffer,
-                        excludeInner = android.graphics.Rect(sl, st, sr, sb))
-
-                    val textColor = if (colorLuminance(bgColor) > 128)
-                        android.graphics.Color.BLACK else android.graphics.Color.WHITE
-
-                    TranslationOverlayView.TextBox(tr.first, bounds, bgColor, textColor)
+                val overlayBoxes = perGroup.zip(placeholderBoxes).map { (tr, placeholder) ->
+                    placeholder.copy(translatedText = tr.first)
                 }
                 cachedOverlayBoxes = overlayBoxes
                 cachedOverlayCropLeft = left
