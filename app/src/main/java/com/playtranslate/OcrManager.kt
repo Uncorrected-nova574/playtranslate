@@ -356,7 +356,7 @@ class OcrManager private constructor() {
                 val sizeMatch = prevH > 0 && run {
                     val lo = minOf(lineH, prevH)
                     val hi = maxOf(lineH, prevH)
-                    (hi - lo).toDouble() / lo <= 0.10
+                    (hi - lo).toDouble() / lo <= 0.20
                 }
                 val closeEnough = refH > 0 && gap <= (refH * 1.5f).toInt()
 
@@ -372,6 +372,13 @@ class OcrManager private constructor() {
                     lastGroup += line
                     continue
                 }
+                // TEMP: log why line wasn't grouped
+                val prevText = lastGroup.joinToString("") { it.text }.take(20)
+                val reasons = mutableListOf<String>()
+                if (!sizeMatch) reasons += "size(${lineH}vs${prevLine.boundingBox?.height()})"
+                if (!closeEnough) reasons += "gap(${gap}>${(refH*1.5f).toInt()})"
+                if (!aligned) reasons += "align(L${kotlin.math.abs(lineBox.left - groupLeft)},R${kotlin.math.abs(lineBox.right - groupRight)}>$alignTolerance)"
+                android.util.Log.d("OCR-GROUP", "NOT grouped: '${line.text.take(20)}' after '$prevText' — ${reasons.joinToString(", ")}")
             }
 
             groups += mutableListOf(line)
@@ -398,7 +405,7 @@ class OcrManager private constructor() {
         screenWidthScaled: Float
     ): List<SplitGroup> {
         return groups.flatMap { group ->
-            if (group.size >= 3 && isMenuLike(group, screenWidthScaled)) {
+            if (group.size >= 4 && isMenuLike(group, screenWidthScaled)) {
                 val boxes = group.mapNotNull { it.boundingBox }
                 val groupLeft = boxes.minOf { it.left }
                 val groupRight = boxes.maxOf { it.right }
