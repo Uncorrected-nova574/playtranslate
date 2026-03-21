@@ -305,6 +305,8 @@ class CaptureService : Service() {
     // ── Detection state (used by handleRawFrame) ─────────────────────────
     private var detectionActive = false
     private var sceneMoving = false
+    /** Force Check C to run on the next cycle (bypass the pixel-change gate). */
+    private var forceCheckC = false
     private var detectionRefNonOverlay: IntArray? = null
     private var detectionRefOverlay: IntArray? = null
     private var detectionOverlayActive: BooleanArray? = null
@@ -329,6 +331,7 @@ class CaptureService : Service() {
         detectionPrevNonOverlay = null
         detectionHasPrev = false
         detectionOverlayTextBoxes = emptyList()
+        forceCheckC = false
     }
 
     val isLive: Boolean get() = liveActive
@@ -468,23 +471,44 @@ class CaptureService : Service() {
                 return
             }
 
-            // CHECK B: Per-box overlay diff
-            val overlayDiff = if (refOverlay != null && overlayActive != null)
-                maxOverlayDiffPercent(overlaySamples, refOverlay, currentOverlay, overlayActive)
-            else 0f
-            if (overlayDiff >= OVERLAY_CHANGE_THRESHOLD) {
-                DetectionLog.log("B: Overlay text changed (${"%.2f".format(overlayDiff*100)}%)")
-                bitmap.recycle()
-                lastLiveOcrText = null
-                cachedOverlayBoxes = null
-                PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
-                detectionActive = false
-                PlayTranslateAccessibilityService.instance?.screenshotManager?.requestCleanCapture()
-                return
+            // CHECK B: Per-box overlay diff — selective removal
+            val overlayResult = if (refOverlay != null && overlayActive != null)
+                overlayDiffPerBox(overlaySamples, refOverlay, currentOverlay, overlayActive)
+            else OverlayDiffResult(0f, emptySet())
+            val overlayDiff = overlayResult.maxDiff
+            if (overlayResult.triggeredBoxIndices.isNotEmpty()) {
+                val allBoxes = cachedOverlayBoxes
+                val fullBoxes = detectionOverlayBoxes
+                if (allBoxes != null && fullBoxes.isNotEmpty()) {
+                    val toRemove = findNearbyBoxIndices(overlayResult.triggeredBoxIndices, fullBoxes)
+                    DetectionLog.log("B: Removing ${toRemove.size}/${allBoxes.size} overlays (triggered=${overlayResult.triggeredBoxIndices})")
+
+                    val remainingBoxes = allBoxes.filterIndexed { i, _ -> i !in toRemove }
+                    val remainingFullBoxes = fullBoxes.filterIndexed { i, _ -> i !in toRemove }
+
+                    cachedOverlayBoxes = remainingBoxes.ifEmpty { null }
+                    detectionOverlayBoxes = remainingFullBoxes
+
+                    if (remainingBoxes.isNotEmpty()) {
+                        showLiveOverlay(remainingBoxes, cachedOverlayCropLeft, cachedOverlayCropTop,
+                            cachedOverlayScreenW, cachedOverlayScreenH)
+                    } else {
+                        PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
+                    }
+
+                    forceCheckC = true
+                    detectionRefOverlay = null
+                    detectionOverlayActive = null
+                    detectionOverlaySamples = detectionOverlaySamples.filter { it.boxIdx !in toRemove }
+
+                    bitmap.recycle()
+                    return
+                }
             }
 
-            // GATE: Any change at all?
-            val anyChange = nonOverlayDiff > 0.005f || overlayDiff > 0.005f
+            // GATE: Any change at all? (forceCheckC bypasses this)
+            val anyChange = forceCheckC || nonOverlayDiff > 0.005f || overlayDiff > 0.005f
+            if (forceCheckC) forceCheckC = false
             if (anyChange) {
                 DetectionLog.log("C: Change (non=${"%.2f".format(nonOverlayDiff*100)}% ovr=${"%.2f".format(overlayDiff*100)}%)")
                 if (cachedOverlayBoxes.isNullOrEmpty()) {
@@ -800,6 +824,36 @@ class CaptureService : Service() {
     private val OVERLAY_PIXEL_DIFF_THRESHOLD = 6 // lower threshold for overlay pixels (attenuated by ~90% alpha)
 
     private data class OverlaySampleData(val x: Int, val y: Int, val textColor: Int, val boxIdx: Int)
+    private data class OverlayDiffResult(val maxDiff: Float, val triggeredBoxIndices: Set<Int>)
+
+    // FILL_PADDING defined in companion object below
+
+    /** True if two rects are within proximity. Shared by Check B and performOcrRecheck. */
+    private fun areRectsNearby(a: android.graphics.Rect, b: android.graphics.Rect): Boolean {
+        val dx = maxOf(0, maxOf(a.left - b.right, b.left - a.right))
+        val dy = maxOf(0, maxOf(a.top - b.bottom, b.top - a.bottom))
+        val refHeight = maxOf(a.height(), b.height())
+        val threshold = maxOf((refHeight * 1.5f).toInt(), FILL_PADDING + 15)
+        return dx < threshold && dy < threshold
+    }
+
+    /** Find all box indices within proximity of the triggered indices. */
+    private fun findNearbyBoxIndices(
+        triggeredIndices: Set<Int>,
+        fullDisplayBoxes: List<android.graphics.Rect>
+    ): Set<Int> {
+        val toRemove = triggeredIndices.toMutableSet()
+        for (trigIdx in triggeredIndices) {
+            if (trigIdx >= fullDisplayBoxes.size) continue
+            for (otherIdx in fullDisplayBoxes.indices) {
+                if (otherIdx in toRemove) continue
+                if (areRectsNearby(fullDisplayBoxes[trigIdx], fullDisplayBoxes[otherIdx])) {
+                    toRemove.add(otherIdx)
+                }
+            }
+        }
+        return toRemove
+    }
 
     private fun isColorMatch(pixel: Int, color: Int): Boolean {
         val dr = kotlin.math.abs(android.graphics.Color.red(pixel) - android.graphics.Color.red(color))
@@ -808,13 +862,13 @@ class CaptureService : Service() {
         return dr <= PIXEL_DIFF_THRESHOLD && dg <= PIXEL_DIFF_THRESHOLD && db <= PIXEL_DIFF_THRESHOLD
     }
 
-    private fun maxOverlayDiffPercent(
+    private fun overlayDiffPerBox(
         samples: List<OverlaySampleData>,
         refPixels: IntArray,
         curPixels: IntArray,
         active: BooleanArray
-    ): Float {
-        if (refPixels.isEmpty()) return 0f
+    ): OverlayDiffResult {
+        if (refPixels.isEmpty()) return OverlayDiffResult(0f, emptySet())
         val boxChanged = mutableMapOf<Int, Int>()
         val boxCounted = mutableMapOf<Int, Int>()
         for (i in refPixels.indices) {
@@ -828,9 +882,16 @@ class CaptureService : Service() {
                 boxChanged[boxIdx] = (boxChanged[boxIdx] ?: 0) + 1
             }
         }
-        return boxCounted.maxOfOrNull { (idx, count) ->
-            if (count > 0) (boxChanged[idx] ?: 0).toFloat() / count else 0f
-        } ?: 0f
+        val triggered = mutableSetOf<Int>()
+        var maxDiff = 0f
+        for ((idx, count) in boxCounted) {
+            if (count > 0) {
+                val diff = (boxChanged[idx] ?: 0).toFloat() / count
+                if (diff > maxDiff) maxDiff = diff
+                if (diff >= OVERLAY_CHANGE_THRESHOLD) triggered.add(idx)
+            }
+        }
+        return OverlayDiffResult(maxDiff, triggered)
     }
 
     private fun pixelDiffPercent(a: IntArray, b: IntArray): Float {
@@ -868,7 +929,7 @@ class CaptureService : Service() {
             val colorScale = 4
             colorRef = Bitmap.createScaledBitmap(bitmap, bitmap.width / colorScale, bitmap.height / colorScale, false)
 
-            val fillPadding = 30
+            val fillPadding = FILL_PADDING
             val fillPaint = Paint()
             for (box in overlays) {
                 val l = (box.bounds.left + cropL - fillPadding).coerceAtLeast(0)
@@ -900,10 +961,12 @@ class CaptureService : Service() {
 
             val anyClose = ocrResult.groupBounds.any { newRect ->
                 overlays.any { existing ->
-                    val dx = maxOf(0, maxOf(existing.bounds.left - newRect.right, newRect.left - existing.bounds.right))
-                    val dy = maxOf(0, maxOf(existing.bounds.top - newRect.bottom, newRect.top - existing.bounds.bottom))
-                    val threshold = maxOf((newRect.height() * 1.5f).toInt(), fillPadding + 15)
-                    dx < threshold && dy < threshold
+                    areRectsNearby(
+                        android.graphics.Rect(existing.bounds.left + cropL, existing.bounds.top + cropT,
+                            existing.bounds.right + cropL, existing.bounds.bottom + cropT),
+                        android.graphics.Rect(newRect.left + left, newRect.top + top,
+                            newRect.right + left, newRect.bottom + top)
+                    )
                 }
             }
 
@@ -1246,6 +1309,7 @@ class CaptureService : Service() {
     companion object {
         private const val LIVE_DEDUP_TOLERANCE = 3    // max character-count drift treated as noise
         private const val LIVE_DEDUP_PCT_THRESHOLD = 0.3f  // 30% change = significant for short text
+        const val FILL_PADDING = 30  // pixels padded around overlay bounds when filling
 
         /** Process-scoped reference for in-process callers (e.g. DragLookupController). */
         @Volatile
