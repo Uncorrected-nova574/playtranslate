@@ -83,10 +83,13 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_CAPTURE_METHOD, "") ?: ""
         set(v) = sp.edit().putString(KEY_CAPTURE_METHOD, v).apply()
 
-    /** Capture interval for live mode in seconds. Minimum 1. */
-    var captureIntervalSec: Int
-        get() = sp.getInt(KEY_CAPTURE_INTERVAL_SEC, 1).coerceAtLeast(1)
-        set(v) = sp.edit().putInt(KEY_CAPTURE_INTERVAL_SEC, v.coerceAtLeast(1)).apply()
+    /** Capture interval for live mode in seconds. Minimum 0.5, default 1.0. */
+    var captureIntervalSec: Float
+        get() = sp.getFloat(KEY_CAPTURE_INTERVAL_SEC, 1.0f).coerceAtLeast(0.5f)
+        set(v) = sp.edit().putFloat(KEY_CAPTURE_INTERVAL_SEC, v.coerceAtLeast(0.5f)).apply()
+
+    /** Capture interval in milliseconds. */
+    val captureIntervalMs: Long get() = (captureIntervalSec * 1000).toLong()
 
     /** Saved scroll position for the settings sheet (restored after theme recreate). */
     var settingsScrollY: Int

@@ -272,12 +272,16 @@ class SettingsBottomSheet : DialogFragment() {
 
         // ── Capture interval (auto-save on text change) ───────────────────
         val etCaptureInterval = view.findViewById<EditText>(R.id.etCaptureInterval)
-        etCaptureInterval.setText(prefs.captureIntervalSec.toString())
+        etCaptureInterval.setText(prefs.captureIntervalSec.let {
+            if (it == it.toLong().toFloat()) it.toLong().toString() else "%.1f".format(it)
+        })
+        etCaptureInterval.inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+            android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         etCaptureInterval.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
-                val v = s?.toString()?.toIntOrNull() ?: return
+                val v = s?.toString()?.toFloatOrNull() ?: return
                 prefs.captureIntervalSec = v
             }
         })

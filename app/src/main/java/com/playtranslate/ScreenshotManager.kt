@@ -39,9 +39,14 @@ class ScreenshotManager(private val a11y: PlayTranslateAccessibilityService) {
     /** Timestamp of the most recent `takeScreenshot` call (success or failure). */
     private var lastCaptureTimeMs = 0L
 
-    /** Minimum time between any two takeScreenshot calls. Balances
-     *  responsiveness against Android's rate limit and device performance. */
+    /** Absolute minimum between takeScreenshot calls (Android API rate limit). */
     private val MIN_SCREENSHOT_INTERVAL_MS = 500L
+
+    /** User-configurable poll interval for the loop. Read from Prefs on each cycle. */
+    private fun pollIntervalMs(): Long {
+        val userMs = Prefs(a11y).captureIntervalMs
+        return maxOf(userMs, MIN_SCREENSHOT_INTERVAL_MS)
+    }
 
     // ── File cache ───────────────────────────────────────────────────────
 
@@ -141,7 +146,10 @@ class ScreenshotManager(private val a11y: PlayTranslateAccessibilityService) {
         stopLoop()
         loopJob = scope.launch {
             while (isActive) {
-                awaitScreenshotInterval()
+                // Use user's poll interval (floored at API rate limit)
+                val elapsed = System.currentTimeMillis() - lastCaptureTimeMs
+                val waitMs = pollIntervalMs() - elapsed
+                if (waitMs > 0) delay(waitMs)
                 val isClean = cleanRequested
                 if (isClean) {
                     cleanRequested = false

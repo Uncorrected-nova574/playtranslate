@@ -983,7 +983,7 @@ class CaptureService : Service() {
         // Debounce until input stops, then request a clean capture
         interactionDebounceJob?.cancel()
         interactionDebounceJob = serviceScope.launch {
-            val settleMs = Prefs(this@CaptureService).captureIntervalSec * 1000L
+            val settleMs = Prefs(this@CaptureService).captureIntervalMs
             delay(settleMs)
             while (PlayTranslateAccessibilityService.instance?.isInputActive == true) {
                 delay(settleMs)
