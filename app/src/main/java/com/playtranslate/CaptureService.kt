@@ -315,6 +315,8 @@ class CaptureService : Service() {
     private var detectionOverlayBoxes: List<android.graphics.Rect> = emptyList()
     private var detectionPrevNonOverlay: IntArray? = null
     private var detectionHasPrev = false
+    private var stabilizationFrameCount = 0
+    private val MAX_STABILIZATION_FRAMES = 10
     private var detectionOverlayTextBoxes: List<TranslationOverlayView.TextBox> = emptyList()
     /** Clean capture job launched from handleCleanFrame (runs async while loop continues). */
     private var cleanProcessingJob: Job? = null
@@ -330,6 +332,7 @@ class CaptureService : Service() {
         detectionOverlayBoxes = emptyList()
         detectionPrevNonOverlay = null
         detectionHasPrev = false
+        stabilizationFrameCount = 0
         detectionOverlayTextBoxes = emptyList()
         forceCheckC = false
     }
@@ -465,6 +468,7 @@ class CaptureService : Service() {
                 bitmap.recycle()
                 sceneMoving = true
                 detectionHasPrev = false
+                stabilizationFrameCount = 0
                 lastLiveOcrText = null
                 cachedOverlayBoxes = null
                 PlayTranslateAccessibilityService.instance?.hideTranslationOverlay()
@@ -534,18 +538,25 @@ class CaptureService : Service() {
             }
         } else {
             // Phase 2: Stabilization — compare consecutive frames
+            stabilizationFrameCount++
             val prevNonOverlay = detectionPrevNonOverlay
             if (detectionHasPrev && prevNonOverlay != null) {
                 val pct = pixelDiffPercent(prevNonOverlay, currentNonOverlay)
-                if (pct < 0.05f) {
-                    DetectionLog.log("Stabilized (${"%.2f".format(pct*100)}%) → clean as raw")
+                if (pct < SCENE_CHANGE_THRESHOLD) {
+                    DetectionLog.log("Stabilized (${"%.2f".format(pct*100)}%) frame $stabilizationFrameCount → clean as raw")
                     sceneMoving = false
                     detectionActive = false
-                    // Scene stabilized — overlays were hidden in Phase 1,
-                    // so this raw frame IS clean. Use it directly.
                     handleCleanFrame(bitmap)
                     return
                 }
+                if (stabilizationFrameCount >= MAX_STABILIZATION_FRAMES) {
+                    DetectionLog.log("Stabilization timeout (${"%.2f".format(pct*100)}%) after $stabilizationFrameCount frames → forcing clean")
+                    sceneMoving = false
+                    detectionActive = false
+                    handleCleanFrame(bitmap)
+                    return
+                }
+                DetectionLog.log("Waiting to stabilize (${"%.2f".format(pct*100)}%) frame $stabilizationFrameCount/$MAX_STABILIZATION_FRAMES")
             }
             detectionPrevNonOverlay = currentNonOverlay
             detectionHasPrev = true
